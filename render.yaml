@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: alexandre-ai
+    name: agente-ia-alexandre
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
@@ -10,8 +10,6 @@ services:
     envVars:
       - key: SECRET_KEY
         generateValue: true
-      - key: DATABASE_URL
-        sync: false
       - key: ADMIN_NAME
         value: Alexandre
       - key: ADMIN_EMAIL

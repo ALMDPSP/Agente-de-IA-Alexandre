@@ -23,7 +23,21 @@ const chatInput = document.querySelector("#chatInput");
 const chatWindow = document.querySelector("#chatWindow");
 const csrfToken = document.querySelector("#csrfToken")?.value;
 
-function appendMessage(text, type) {
+const CHAT_KEY = "alexandre_ai_chat_history_v1";
+
+function getHistory() {
+    try {
+        return JSON.parse(localStorage.getItem(CHAT_KEY) || "[]");
+    } catch {
+        return [];
+    }
+}
+
+function saveHistory(history) {
+    localStorage.setItem(CHAT_KEY, JSON.stringify(history.slice(-100)));
+}
+
+function appendMessage(text, type, persist = true) {
     const wrapper = document.createElement("div");
     wrapper.className = `message ${type === "user" ? "user-message" : "assistant-message"}`;
 
@@ -38,6 +52,22 @@ function appendMessage(text, type) {
     wrapper.append(avatar, bubble);
     chatWindow.appendChild(wrapper);
     chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    if (persist) {
+        const history = getHistory();
+        history.push({ text, type, ts: Date.now() });
+        saveHistory(history);
+    }
+}
+
+function loadHistory() {
+    const history = getHistory();
+    if (!history.length) return;
+
+    const initial = chatWindow.querySelector(".assistant-message");
+    if (initial) initial.remove();
+
+    history.forEach(item => appendMessage(item.text, item.type, false));
 }
 
 async function sendMessage(text) {
@@ -90,3 +120,5 @@ chatInput?.addEventListener("input", () => {
 document.querySelectorAll("[data-prompt]").forEach(button => {
     button.addEventListener("click", () => sendMessage(button.dataset.prompt || ""));
 });
+
+loadHistory();
