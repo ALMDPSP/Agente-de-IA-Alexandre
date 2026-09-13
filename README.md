@@ -1,55 +1,33 @@
-# Agente de IA Alexandre — versão sem banco
+# Agente de IA Alexandre — V3
 
-Central pessoal com login, dashboard responsivo e interface inicial para um Agente de IA.
+Site pessoal sem banco de dados, com login, dashboard e Agente IA usando fallback automático.
+
+## Arquitetura
+
+```text
+Usuário
+  ↓
+Flask no Render
+  ↓
+Groq
+  ↓ falhou/limite
+Gemini
+  ↓ falhou/limite
+Cloudflare Workers AI
+```
 
 ## Stack
 
 - Python + Flask
 - Flask-Login
+- OpenAI Python SDK como cliente compatível
 - HTML + CSS + JavaScript
 - Gunicorn
 - Render
 - GitHub
+- Sem banco de dados
 
-## Esta versão NÃO usa banco de dados
-
-O login é validado usando variáveis de ambiente configuradas no Render:
-
-- `ADMIN_NAME`
-- `ADMIN_EMAIL`
-- `ADMIN_PASSWORD`
-- `SECRET_KEY`
-
-O histórico da conversa é salvo no `localStorage` do navegador.
-
-## Recursos
-
-- Login
-- Sessão autenticada
-- Proteção CSRF
-- Dashboard responsivo
-- Menu lateral mobile/desktop
-- Área de conversa com rolagem
-- Histórico local no navegador
-- Endpoint inicial `/api/agent`
-- Health check `/health`
-- Estrutura pronta para Groq → Gemini → Cloudflare AI
-
-## Deploy no Render
-
-Build Command:
-
-```text
-pip install -r requirements.txt
-```
-
-Start Command:
-
-```text
-gunicorn app:app
-```
-
-Variáveis:
+## Variáveis obrigatórias do login
 
 ```text
 SECRET_KEY
@@ -58,18 +36,64 @@ ADMIN_EMAIL
 ADMIN_PASSWORD
 ```
 
-O `render.yaml` já está pronto para criar essas configurações.
+## Variáveis da IA
+
+Configure pelo menos um provedor.
+
+### Groq
+
+```text
+GROQ_API_KEY
+GROQ_MODEL=openai/gpt-oss-20b
+```
+
+### Gemini
+
+```text
+GEMINI_API_KEY
+GEMINI_MODEL=gemini-3.8-flash
+```
+
+### Cloudflare Workers AI
+
+```text
+CLOUDFLARE_API_TOKEN
+CLOUDFLARE_ACCOUNT_ID
+CLOUDFLARE_MODEL=@cf/google/gemma-4-26b-a4b-it
+```
+
+## Ordem de fallback
+
+A ordem é fixa no backend:
+
+1. Groq
+2. Gemini
+3. Cloudflare
+
+Se uma credencial não estiver configurada, aquele provedor é ignorado.
+
+## Histórico
+
+O histórico fica no `localStorage` do navegador e não em um banco.
+Somente as últimas mensagens são enviadas ao backend como contexto.
+
+## Deploy no Render
+
+Build:
+
+```text
+pip install -r requirements.txt
+```
+
+Start:
+
+```text
+gunicorn app:app
+```
+
+Depois de adicionar/alterar variáveis no Render, faça um novo deploy.
 
 ## Segurança
 
-Nunca coloque chaves de IA, senha administrativa ou `SECRET_KEY` dentro do código.
-
-Não envie o arquivo `.env` para o GitHub.
-
-## Próxima etapa
-
-Conectar o endpoint `/api/agent` ao fallback:
-
-```text
-Groq → Gemini → Cloudflare AI
-```
+Nunca coloque API keys diretamente no GitHub ou no JavaScript.
+As chaves devem ficar somente em `Environment` no Render.
