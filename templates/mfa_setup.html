@@ -7,70 +7,115 @@
     <title>Configurar MFA | Alexandre AI</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
-<body class="auth-body">
+<body class="auth-body auth-futuristic-body">
     <div class="auth-grid-bg" aria-hidden="true"></div>
     <div class="auth-aurora auth-aurora-a" aria-hidden="true"></div>
     <div class="auth-aurora auth-aurora-b" aria-hidden="true"></div>
+    <div class="auth-noise" aria-hidden="true"></div>
 
-    <main class="mfa-page setup-page">
-        <section class="mfa-card setup-card">
-            <a class="brand mfa-brand" href="{{ url_for('login') }}">
-                <span class="brand-mark">A</span>
-                <span>Alexandre <strong>AI</strong></span>
-            </a>
-
-            <span class="eyebrow">PAREAMENTO SEGURO</span>
-            <h1>Conecte seu Authenticator</h1>
-            <p>Escaneie o QR Code abaixo no Microsoft Authenticator ou Google Authenticator.</p>
-
-            <div class="qr-shell">
-                <img src="{{ qr_data }}" alt="QR Code para configurar autenticação em duas etapas">
-                <span class="qr-corners" aria-hidden="true"></span>
+    <main class="auth-shell auth-shell-v2 auth-shell-mfa">
+        <section class="auth-stage-panel auth-stage-panel-mfa">
+            <div class="auth-brand-row">
+                <a class="brand brand-large" href="{{ url_for('login') }}">
+                    <span class="brand-mark">A</span>
+                    <span>Alexandre <strong>AI</strong></span>
+                </a>
+                <span class="system-online"><i></i> Pareamento seguro</span>
             </div>
 
-            <div class="manual-key">
-                <span>Chave manual</span>
-                <code>{{ manual_key }}</code>
-                <small>Conta: {{ account_email or "Alexandre" }}</small>
+            <div class="auth-stage-copy compact-copy">
+                <span class="eyebrow">PAIR YOUR AUTHENTICATOR</span>
+                <h1>Conecte o seu <span>segundo fator.</span></h1>
+                <p>Escaneie o QR Code no aplicativo autenticador para ativar a dupla autenticação do Alexandre AI.</p>
             </div>
 
-            <div class="setup-steps">
-                <span><b>1</b> Abra o aplicativo autenticador</span>
-                <span><b>2</b> Adicione uma conta e leia o QR Code</span>
-                <span><b>3</b> Digite abaixo o código exibido</span>
+            <div class="auth-holo-stage auth-holo-stage-mfa" aria-hidden="true">
+                <div class="mfa-radar-v2 qr-radar-v2">
+                    <div class="radar-ring r1"></div>
+                    <div class="radar-ring r2"></div>
+                    <div class="radar-ring r3"></div>
+                    <div class="radar-sweep"></div>
+                    <div class="radar-core">QR</div>
+                    <span class="radar-dot rd1"></span>
+                    <span class="radar-dot rd2"></span>
+                    <span class="radar-dot rd3"></span>
+                </div>
             </div>
 
-            {% if error %}
-                <div class="alert auth-alert">{{ error }}</div>
-            {% endif %}
+            <div class="auth-status-grid">
+                <div class="auth-status-card">
+                    <small>FLOW</small>
+                    <strong>SETUP</strong>
+                </div>
+                <div class="auth-status-card">
+                    <small>APP</small>
+                    <strong>AUTHENTICATOR</strong>
+                </div>
+                <div class="auth-status-card">
+                    <small>PAIRING</small>
+                    <strong>READY</strong>
+                </div>
+            </div>
+        </section>
 
-            <form method="post" class="mfa-form" id="mfaSetupForm">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <section class="auth-form-panel auth-panel-v2">
+            <div class="auth-card auth-card-v2 auth-card-mfa auth-card-setup">
+                <div class="auth-card-header auth-card-header-v2">
+                    <div class="mobile-brand brand">
+                        <span class="brand-mark">A</span>
+                        <span>Alexandre <strong>AI</strong></span>
+                    </div>
 
-                <label for="code">Confirmar código</label>
-                <input
-                    id="code"
-                    name="code"
-                    class="otp-input"
-                    type="text"
-                    inputmode="numeric"
-                    autocomplete="one-time-code"
-                    maxlength="6"
-                    pattern="[0-9]{6}"
-                    placeholder="000000"
-                    required
-                    autofocus
-                >
+                    <div class="auth-icon-lock auth-icon-lock-v2">◌</div>
+                    <span class="eyebrow">SETUP DO MFA</span>
+                    <h2>Configurar autenticador</h2>
+                    <p>Escaneie o QR Code abaixo e depois confirme com o código temporário exibido no seu aplicativo.</p>
+                </div>
 
-                <button class="primary-btn futuristic-btn" type="submit">
-                    <span>Confirmar e acessar</span>
-                    <b>→</b>
-                </button>
-            </form>
+                <div class="qr-shell qr-shell-v2">
+                    <img src="{{ qr_data }}" alt="QR Code para configurar autenticação em duas etapas">
+                    <span class="qr-corners" aria-hidden="true"></span>
+                </div>
 
-            <div class="setup-warning">
-                <strong>Importante:</strong>
-                depois que confirmar o código, altere <code>MFA_SETUP_ENABLED</code> para <code>false</code> no Render.
+                <div class="manual-key manual-key-v2">
+                    <span>Chave manual</span>
+                    <code>{{ manual_key }}</code>
+                    <small>Conta: {{ account_email or "Alexandre" }}</small>
+                </div>
+
+                <div class="setup-steps setup-steps-v2">
+                    <span><b>1</b> Abra o aplicativo autenticador</span>
+                    <span><b>2</b> Adicione uma conta e leia o QR Code</span>
+                    <span><b>3</b> Digite abaixo o código exibido</span>
+                </div>
+
+                {% if error %}
+                    <div class="alert auth-alert">{{ error }}</div>
+                {% endif %}
+
+                <form method="post" class="mfa-form mfa-form-v2" id="mfaSetupForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <label for="code">Confirmar código</label>
+                    <div class="otp-shell">
+                        <input id="code" name="code" class="otp-input otp-input-v2" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000" required autofocus>
+                        <div class="otp-helper">
+                            <span>6 dígitos</span>
+                            <span>após confirmar, o acesso será liberado</span>
+                        </div>
+                    </div>
+
+                    <button class="primary-btn futuristic-btn auth-submit-btn" type="submit">
+                        <span>Confirmar e acessar</span>
+                        <b>→</b>
+                    </button>
+                </form>
+
+                <div class="setup-warning setup-warning-v2">
+                    <strong>Importante:</strong> depois que confirmar o código, altere <code>MFA_SETUP_ENABLED</code> para <code>false</code> no Render.
+                </div>
+
+                <a class="back-login back-login-v2" href="{{ url_for('login') }}">← Voltar ao login</a>
             </div>
         </section>
     </main>

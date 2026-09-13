@@ -9,3 +9,11 @@ if (toggle && password) {
         toggle.textContent = isPassword ? "◌" : "◉";
     });
 }
+
+const emailInput = document.querySelector('#email');
+const submitBtn = document.querySelector('.auth-submit-btn');
+if (emailInput && submitBtn) {
+    emailInput.addEventListener('input', () => {
+        submitBtn.dataset.armed = emailInput.value.includes('@') ? 'true' : 'false';
+    });
+}

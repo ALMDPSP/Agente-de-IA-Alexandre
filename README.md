@@ -113,3 +113,12 @@ Start:
 ```text
 gunicorn app:app
 ```
+
+
+## V8 — Auth futurista
+
+- Tela de login padronizada com MFA e setup
+- Visual muito mais futurista e profissional
+- Mesma linguagem visual entre login, verificação MFA e pareamento
+- Indicador de progresso das etapas de acesso
+- Cartões, hologramas, radar e componentes premium

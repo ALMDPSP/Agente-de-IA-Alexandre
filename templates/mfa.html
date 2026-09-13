@@ -7,69 +7,116 @@
     <title>Verificação MFA | Alexandre AI</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
-<body class="auth-body">
+<body class="auth-body auth-futuristic-body">
     <div class="auth-grid-bg" aria-hidden="true"></div>
     <div class="auth-aurora auth-aurora-a" aria-hidden="true"></div>
     <div class="auth-aurora auth-aurora-b" aria-hidden="true"></div>
+    <div class="auth-noise" aria-hidden="true"></div>
 
-    <main class="mfa-page">
-        <section class="mfa-card">
-            <a class="brand mfa-brand" href="{{ url_for('login') }}">
-                <span class="brand-mark">A</span>
-                <span>Alexandre <strong>AI</strong></span>
-            </a>
-
-            <div class="mfa-radar" aria-hidden="true">
-                <div></div><div></div><div></div>
-                <span>2FA</span>
+    <main class="auth-shell auth-shell-v2 auth-shell-mfa">
+        <section class="auth-stage-panel auth-stage-panel-mfa">
+            <div class="auth-brand-row">
+                <a class="brand brand-large" href="{{ url_for('login') }}">
+                    <span class="brand-mark">A</span>
+                    <span>Alexandre <strong>AI</strong></span>
+                </a>
+                <span class="system-online"><i></i> Validação ativa</span>
             </div>
 
-            <span class="eyebrow">SEGUNDA CAMADA</span>
-            <h1>Verificação de identidade</h1>
-            <p>Abra o Microsoft Authenticator ou Google Authenticator e informe o código de 6 dígitos.</p>
+            <div class="auth-stage-copy compact-copy">
+                <span class="eyebrow">SECOND SECURITY LAYER</span>
+                <h1>Confirme sua identidade com o <span>Authenticator.</span></h1>
+                <p>Esta etapa protege o acesso ao seu agente de IA com um código temporário de 6 dígitos.</p>
+            </div>
 
-            {% if error %}
-                <div class="alert auth-alert">{{ error }}</div>
-            {% endif %}
+            <div class="auth-holo-stage auth-holo-stage-mfa" aria-hidden="true">
+                <div class="mfa-radar-v2">
+                    <div class="radar-ring r1"></div>
+                    <div class="radar-ring r2"></div>
+                    <div class="radar-ring r3"></div>
+                    <div class="radar-sweep"></div>
+                    <div class="radar-core">2FA</div>
+                    <span class="radar-dot rd1"></span>
+                    <span class="radar-dot rd2"></span>
+                    <span class="radar-dot rd3"></span>
+                </div>
+            </div>
 
-            {% if not locked %}
-            <form method="post" class="mfa-form" id="mfaForm">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="auth-status-grid">
+                <div class="auth-status-card">
+                    <small>CÓDIGO</small>
+                    <strong>TOTP 30S</strong>
+                </div>
+                <div class="auth-status-card">
+                    <small>ORIGEM</small>
+                    <strong>LOCAL</strong>
+                </div>
+                <div class="auth-status-card">
+                    <small>TRUST</small>
+                    <strong>LOCKED</strong>
+                </div>
+            </div>
+        </section>
 
-                <label for="code">Código temporário</label>
-                <input
-                    id="code"
-                    name="code"
-                    class="otp-input"
-                    type="text"
-                    inputmode="numeric"
-                    autocomplete="one-time-code"
-                    maxlength="6"
-                    pattern="[0-9]{6}"
-                    placeholder="000000"
-                    required
-                    autofocus
-                >
+        <section class="auth-form-panel auth-panel-v2">
+            <div class="auth-card auth-card-v2 auth-card-mfa">
+                <div class="auth-card-header auth-card-header-v2">
+                    <div class="mobile-brand brand">
+                        <span class="brand-mark">A</span>
+                        <span>Alexandre <strong>AI</strong></span>
+                    </div>
 
-                <button class="primary-btn futuristic-btn" type="submit">
-                    <span>Validar código</span>
-                    <b>→</b>
-                </button>
-            </form>
-            {% endif %}
+                    <div class="auth-icon-lock auth-icon-lock-v2">◉</div>
+                    <span class="eyebrow">PASSO 2 DE 2</span>
+                    <h2>Validação MFA</h2>
+                    <p>Abra o Microsoft Authenticator ou Google Authenticator e digite o código gerado.</p>
+                </div>
 
-            {% if setup_enabled and not locked %}
-            <a class="setup-link" href="{{ url_for('mfa_setup') }}">
-                Primeiro acesso neste autenticador? <strong>Configurar QR Code</strong>
-            </a>
-            {% endif %}
+                <div class="auth-progress auth-progress-mfa">
+                    <span class="step done"><i></i> Credenciais</span>
+                    <span class="line"></span>
+                    <span class="step active"><i></i> MFA</span>
+                    <span class="line"></span>
+                    <span class="step pending"><i></i> Dashboard</span>
+                </div>
 
-            <a class="back-login" href="{{ url_for('login') }}">← Voltar ao login</a>
+                {% if error %}
+                    <div class="alert auth-alert">{{ error }}</div>
+                {% endif %}
 
-            <div class="mfa-trust-row">
-                <span><i></i> TOTP 30s</span>
-                <span><i></i> Sessão protegida</span>
-                <span><i></i> Código local</span>
+                {% if not locked %}
+                <form method="post" class="mfa-form mfa-form-v2" id="mfaForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <label for="code">Código temporário</label>
+                    <div class="otp-shell">
+                        <input id="code" name="code" class="otp-input otp-input-v2" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000" required autofocus>
+                        <div class="otp-helper">
+                            <span>6 dígitos</span>
+                            <span>expira em ~30s</span>
+                        </div>
+                    </div>
+
+                    <button class="primary-btn futuristic-btn auth-submit-btn" type="submit">
+                        <span>Validar código</span>
+                        <b>→</b>
+                    </button>
+                </form>
+                {% endif %}
+
+                {% if setup_enabled and not locked %}
+                <a class="setup-link setup-link-v2" href="{{ url_for('mfa_setup') }}">
+                    Primeiro acesso neste autenticador? <strong>Configurar QR Code</strong>
+                </a>
+                {% endif %}
+
+                <a class="back-login back-login-v2" href="{{ url_for('login') }}">← Voltar ao login</a>
+
+                <div class="mfa-trust-row mfa-trust-row-v2">
+                    <span><i></i> TOTP 30s</span>
+                    <span><i></i> Sessão protegida</span>
+                    <span><i></i> Código local</span>
+                </div>
             </div>
         </section>
     </main>
