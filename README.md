@@ -1,31 +1,35 @@
-# Alexandre AI — V6 Central Pessoal
+# Alexandre AI — V7 Arquivos Inteligentes
 
-Esta versão transforma o projeto em uma central pessoal funcional, ainda sem banco de dados.
+Versão focada em projetos pessoais e arquivos locais, sem integração Microsoft e sem banco de dados.
 
-## Recursos
+## O que mudou
 
-### Segurança
-- Login por e-mail e senha
-- MFA TOTP com Microsoft Authenticator / Google Authenticator
-- Sessão protegida
-- Limite de tentativas MFA
+A integração OneNote / OneDrive foi removida.
 
-### Agente IA
-- Groq → Gemini → Cloudflare
-- Histórico de conversa local
-- Projeto ativo enviado como contexto
-- Fontes do projeto usadas como conhecimento privado
+Agora o conhecimento do agente vem de arquivos enviados pelo próprio usuário.
 
-### Projetos pessoais
-- Criar
-- Editar
-- Excluir
-- Definir projeto ativo
-- Status do projeto
-- Fontes vinculadas ao projeto
+## Funcionamento
 
-### Arquivos locais
-Formatos suportados:
+```text
+Arquivo
+  ↓
+Extração de texto
+  ↓
+Divisão em trechos
+  ↓
+Armazenamento no navegador
+  ↓
+Pergunta
+  ↓
+Busca dos trechos mais relevantes
+  ↓
+Groq → Gemini → Cloudflare
+  ↓
+Resposta contextualizada
+```
+
+## Tipos de arquivo
+
 - PDF
 - DOCX
 - XLSX / XLSM
@@ -37,132 +41,66 @@ Formatos suportados:
 - HTML
 - LOG
 
-O arquivo é processado em memória. O original não é persistido no Render.
+Limite atual por upload: 15 MB.
 
-### Microsoft
-Integração OAuth com Microsoft Graph:
-- OneNote
-- OneDrive
+## Projetos
 
-Permissões delegadas:
-- User.Read
-- Notes.Read
-- Files.Read
+Cada projeto pode ter:
 
-### Histórico
-- Registro das perguntas feitas ao agente
-- Pesquisa no histórico
-- Reutilização da pergunta
-- Exclusão individual
-- Botão "Limpar histórico"
+- Nome
+- Descrição
+- Status
+- Vários documentos
+- Centenas de trechos indexados
 
-### Backup
-- Exportar projetos, fontes e histórico em JSON
-- Restaurar backup em outro navegador/computador
+Ao selecionar um projeto como ativo, o agente busca automaticamente os trechos mais relevantes para cada pergunta.
 
----
+## Busca inteligente
 
-# Importante: sem banco de dados
+A versão V7 não envia todos os documentos para a IA.
 
-Projetos, fontes importadas e histórico ficam no `localStorage` do navegador.
+Ela:
 
-O Render Free tem filesystem efêmero, portanto o aplicativo não tenta guardar uploads no disco do servidor.
+1. transforma a pergunta em palavras relevantes;
+2. pesquisa essas palavras nos trechos indexados;
+3. atribui uma pontuação a cada trecho;
+4. seleciona os melhores resultados;
+5. envia somente esses trechos ao modelo.
 
-Use a função **Backup e restauração** para proteger seus dados locais.
+Isso economiza contexto e melhora a precisão.
 
-A autenticação Microsoft é armazenada em sessão do servidor. Se o serviço do Render reiniciar ou ficar inativo e for recriado, talvez seja necessário clicar novamente em **Conectar Microsoft**.
+## Histórico
 
----
+Inclui:
 
-# Configurar Microsoft Graph
+- histórico das perguntas;
+- busca;
+- reutilização;
+- exclusão individual;
+- botão Limpar histórico.
 
-Você precisa criar um App Registration na Microsoft.
+## Backup
 
-## 1. Criar o aplicativo
+Exporta em JSON:
 
-Acesse o Microsoft Entra Admin Center / App registrations e crie um novo registro.
+- projetos;
+- descrições;
+- documentos extraídos;
+- chunks/trechos;
+- conversa;
+- histórico.
 
-Para conta pessoal Microsoft, escolha um tipo de conta que permita:
-- contas organizacionais
-- contas pessoais Microsoft
+Assim você pode restaurar tudo em outro navegador.
 
-## 2. Redirect URI
+## Importante
 
-Tipo: Web
+O sistema não usa banco de dados.
 
-Use exatamente:
+Os conteúdos extraídos dos arquivos ficam no `localStorage` do navegador.
 
-```text
-https://SEU-SERVICO.onrender.com/microsoft/callback
-```
+Arquivos muito grandes ou uma quantidade muito alta de documentos podem atingir o limite de armazenamento do navegador. Se isso acontecer, a evolução recomendada é usar IndexedDB ou um banco vetorial.
 
-Exemplo:
-
-```text
-https://agente-ia-alexandre.onrender.com/microsoft/callback
-```
-
-## 3. API permissions
-
-Microsoft Graph — Delegated permissions:
-
-```text
-User.Read
-Notes.Read
-Files.Read
-```
-
-## 4. Client secret
-
-Crie um Client Secret e salve o **Value** imediatamente.
-
-Nunca coloque esse segredo no GitHub.
-
-## 5. Render → Environment
-
-Adicione:
-
-```text
-MS_CLIENT_ID=<Application (client) ID>
-MS_CLIENT_SECRET=<secret Value>
-MS_TENANT=common
-MS_REDIRECT_URI=https://SEU-SERVICO.onrender.com/microsoft/callback
-```
-
-Depois salve e faça novo deploy.
-
----
-
-# Variáveis completas
-
-```text
-SECRET_KEY
-ADMIN_NAME
-ADMIN_EMAIL
-ADMIN_PASSWORD
-
-MFA_ENABLED
-MFA_SETUP_ENABLED
-
-GROQ_API_KEY
-GROQ_MODEL
-
-GEMINI_API_KEY
-GEMINI_MODEL
-
-CLOUDFLARE_API_TOKEN
-CLOUDFLARE_ACCOUNT_ID
-CLOUDFLARE_MODEL
-
-MS_CLIENT_ID
-MS_CLIENT_SECRET
-MS_TENANT
-MS_REDIRECT_URI
-```
-
----
-
-# Deploy Render
+## Render
 
 Build:
 

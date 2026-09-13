@@ -34,11 +34,3 @@ services:
         sync: false
       - key: CLOUDFLARE_MODEL
         value: "@cf/google/gemma-4-26b-a4b-it"
-      - key: MS_CLIENT_ID
-        sync: false
-      - key: MS_CLIENT_SECRET
-        sync: false
-      - key: MS_TENANT
-        value: common
-      - key: MS_REDIRECT_URI
-        sync: false

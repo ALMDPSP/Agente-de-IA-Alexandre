@@ -1,10 +1,10 @@
-const $ = (selector) => document.querySelector(selector);
-const $$ = (selector) => [...document.querySelectorAll(selector)];
+const $ = selector => document.querySelector(selector);
+const $$ = selector => [...document.querySelectorAll(selector)];
 
 const csrfToken = $("#csrfToken")?.value;
 
 const STORAGE = {
-    projects: "alexandre_ai_projects_v1",
+    projects: "alexandre_ai_projects_v2",
     chat: "alexandre_ai_chat_history_v2",
     history: "alexandre_ai_search_history_v1",
     activeProject: "alexandre_ai_active_project_v1",
@@ -13,15 +13,12 @@ const STORAGE = {
 const state = {
     projects: loadJson(STORAGE.projects, []),
     activeProjectId: localStorage.getItem(STORAGE.activeProject) || "",
-    msConnected: false,
-    msConfigured: false,
-    oneDriveFolderStack: [],
 };
 
 function loadJson(key, fallback) {
     try {
-        const parsed = JSON.parse(localStorage.getItem(key));
-        return parsed ?? fallback;
+        const value = JSON.parse(localStorage.getItem(key));
+        return value ?? fallback;
     } catch {
         return fallback;
     }
@@ -42,6 +39,26 @@ function escapeText(value) {
     return div.innerHTML;
 }
 
+function normalizeForSearch(text) {
+    return String(text || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+}
+
+function tokenize(text) {
+    const stopwords = new Set([
+        "de","da","do","das","dos","a","o","as","os","e","em","para","por","com","um","uma",
+        "que","se","no","na","nos","nas","ao","aos","como","mais","menos","sobre","qual","quais",
+        "me","meu","minha","meus","minhas","este","esta","esse","essa","isso","isto","ser","tem",
+        "ter","foi","sao","é","é","the","and","of","to","in"
+    ]);
+
+    return normalizeForSearch(text)
+        .split(/[^a-z0-9]+/)
+        .filter(token => token.length >= 3 && !stopwords.has(token));
+}
+
 function formatDate(value) {
     if (!value) return "—";
     const d = new Date(value);
@@ -59,84 +76,138 @@ function humanSize(bytes = 0) {
     return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function getProject(projectId) {
-    return state.projects.find(p => p.id === projectId);
-}
-
-function saveProjects() {
-    saveJson(STORAGE.projects, state.projects);
-    renderAllProjectDependentUI();
-}
-
-function totalSources() {
-    return state.projects.reduce((sum, p) => sum + (p.sources?.length || 0), 0);
-}
-
 function ensureProjectShape(project) {
-    project.sources = Array.isArray(project.sources) ? project.sources : [];
+    project.documents = Array.isArray(project.documents) ? project.documents : [];
     project.status = project.status || "Planejamento";
     return project;
 }
 
 state.projects = state.projects.map(ensureProjectShape);
 
-function getSearchHistory() {
-    return loadJson(STORAGE.history, []);
+function getProject(id) {
+    return state.projects.find(project => project.id === id);
 }
 
-function addSearchHistory(query, projectId, provider = "") {
-    const items = getSearchHistory();
-    const project = getProject(projectId);
-    items.unshift({
-        id: uid("search"),
-        query,
-        projectId: projectId || "",
-        projectName: project?.name || "Conversa geral",
-        provider,
-        createdAt: new Date().toISOString(),
-    });
-    saveJson(STORAGE.history, items.slice(0, 500));
-    renderHistory();
-    updateStats();
+function saveProjects() {
+    saveJson(STORAGE.projects, state.projects);
+    renderProjectDependentUI();
+}
+
+function allDocuments(projects = state.projects) {
+    return projects.flatMap(project => (project.documents || []).map(document => ({ project, document })));
+}
+
+function totalChunks() {
+    return allDocuments().reduce((sum, item) => sum + (item.document.chunks?.length || 0), 0);
+}
+
+function getSearchHistory() {
+    return loadJson(STORAGE.history, []);
 }
 
 function getChatHistory() {
     return loadJson(STORAGE.chat, []);
 }
 
-function saveChatHistory(items) {
-    saveJson(STORAGE.chat, items.slice(-100));
+function saveChatHistory(history) {
+    saveJson(STORAGE.chat, history.slice(-100));
 }
 
-function buildProjectContext(projectId) {
+function addSearchHistory(query, projectId, provider = "", usedDocuments = []) {
+    const history = getSearchHistory();
     const project = getProject(projectId);
-    if (!project) return "";
 
-    const lines = [
+    history.unshift({
+        id: uid("search"),
+        query,
+        projectId: projectId || "",
+        projectName: project?.name || "Conversa geral",
+        provider,
+        usedDocuments,
+        createdAt: new Date().toISOString(),
+    });
+
+    saveJson(STORAGE.history, history.slice(0, 500));
+    renderHistory();
+    updateStats();
+}
+
+function scoreChunk(chunk, queryTokens) {
+    if (!queryTokens.length) return 0;
+
+    const text = normalizeForSearch(chunk.text);
+    let score = 0;
+
+    for (const token of queryTokens) {
+        const count = text.split(token).length - 1;
+        if (count > 0) {
+            score += Math.min(count, 6) * (token.length >= 7 ? 2.2 : 1.5);
+        }
+    }
+
+    const joined = queryTokens.join(" ");
+    if (joined.length > 8 && text.includes(joined)) score += 8;
+
+    return score;
+}
+
+function retrieveRelevantChunks(projectId, query, maxChunks = 8) {
+    const project = getProject(projectId);
+    if (!project) return [];
+
+    const tokens = tokenize(query);
+    const candidates = [];
+
+    for (const document of project.documents || []) {
+        for (const chunk of document.chunks || []) {
+            const score = scoreChunk(chunk, tokens);
+            candidates.push({
+                ...chunk,
+                documentId: document.id,
+                documentTitle: document.title,
+                score,
+            });
+        }
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+
+    const positive = candidates.filter(item => item.score > 0).slice(0, maxChunks);
+    if (positive.length) return positive;
+
+    return candidates.slice(0, Math.min(3, maxChunks));
+}
+
+function buildProjectContext(projectId, query) {
+    const project = getProject(projectId);
+    if (!project) return { context: "", usedDocuments: [], chunkCount: 0 };
+
+    const chunks = retrieveRelevantChunks(projectId, query, 8);
+    const names = [...new Set(chunks.map(chunk => chunk.documentTitle))];
+
+    const parts = [
         `PROJETO: ${project.name}`,
         `STATUS: ${project.status || "Não informado"}`,
         `DESCRIÇÃO: ${project.description || "Sem descrição"}`,
     ];
 
-    const sources = project.sources || [];
-    if (sources.length) {
-        lines.push("", "FONTES IMPORTADAS:");
-        let remaining = 42000;
+    if (chunks.length) {
+        parts.push("", "TRECHOS RELEVANTES DOS DOCUMENTOS:");
 
-        for (const source of sources) {
-            if (remaining <= 0) break;
-            const content = String(source.content || "");
-            const slice = content.slice(0, Math.min(12000, remaining));
-            lines.push(
+        chunks.forEach((chunk, index) => {
+            parts.push(
                 "",
-                `--- FONTE: ${source.title} (${source.type}) ---`,
-                slice
+                `[Trecho ${index + 1} | Arquivo: ${chunk.documentTitle}]`,
+                chunk.text
             );
-            remaining -= slice.length;
-        }
+        });
     }
 
-    return lines.join("\n").slice(0, 45000);
+    return {
+        context: parts.join("\n").slice(0, 52000),
+        usedDocuments: names,
+        chunkCount: chunks.length,
+    };
 }
 
 // Sidebar
@@ -158,20 +229,18 @@ $$(".nav-item").forEach(item => {
     });
 });
 
-// Projeto
+// Projetos
 function renderProjectOptions() {
     const selects = [
         $("#activeProjectSelect"),
         $("#fileProjectSelect"),
-        $("#onenoteProjectSelect"),
-        $("#onedriveProjectSelect"),
-        $("#sourceProjectFilter"),
+        $("#knowledgeProjectFilter"),
     ].filter(Boolean);
 
     selects.forEach(select => {
         const isActive = select.id === "activeProjectSelect";
-        const isFilter = select.id === "sourceProjectFilter";
-        const current = select.value;
+        const isFilter = select.id === "knowledgeProjectFilter";
+        const currentValue = select.value;
 
         select.innerHTML = "";
 
@@ -189,8 +258,8 @@ function renderProjectOptions() {
 
         if (isActive) {
             select.value = getProject(state.activeProjectId) ? state.activeProjectId : "";
-        } else if ([...select.options].some(o => o.value === current)) {
-            select.value = current;
+        } else if ([...select.options].some(option => option.value === currentValue)) {
+            select.value = currentValue;
         }
     });
 
@@ -214,12 +283,14 @@ function renderProjects() {
     state.projects.forEach(project => {
         const card = document.createElement("article");
         card.className = "project-card";
-        const sources = project.sources?.length || 0;
+
+        const documentCount = project.documents?.length || 0;
+        const chunks = (project.documents || []).reduce((sum, doc) => sum + (doc.chunks?.length || 0), 0);
 
         card.innerHTML = `
             <div class="project-card-top">
                 <span class="project-status">${escapeText(project.status)}</span>
-                <span class="project-source-count">${sources} fonte(s)</span>
+                <span class="project-source-count">${documentCount} doc · ${chunks} trechos</span>
             </div>
             <h3>${escapeText(project.name)}</h3>
             <p>${escapeText(project.description || "Sem descrição.")}</p>
@@ -237,17 +308,21 @@ function renderProjects() {
             state.activeProjectId = project.id;
             localStorage.setItem(STORAGE.activeProject, project.id);
             renderProjectOptions();
-            document.querySelector("#agent")?.scrollIntoView({ behavior: "smooth" });
+            $("#agent")?.scrollIntoView({ behavior: "smooth" });
         });
 
         card.querySelector('[data-action="edit"]').addEventListener("click", () => openProjectForm(project));
+
         card.querySelector('[data-action="delete"]').addEventListener("click", () => {
-            if (!confirm(`Excluir o projeto "${project.name}" e suas fontes locais?`)) return;
-            state.projects = state.projects.filter(p => p.id !== project.id);
+            if (!confirm(`Excluir o projeto "${project.name}" e todos os documentos importados nele?`)) return;
+
+            state.projects = state.projects.filter(item => item.id !== project.id);
+
             if (state.activeProjectId === project.id) {
                 state.activeProjectId = "";
                 localStorage.removeItem(STORAGE.activeProject);
             }
+
             saveProjects();
         });
 
@@ -299,8 +374,9 @@ $("#projectForm")?.addEventListener("submit", event => {
             status,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            sources: [],
+            documents: [],
         };
+
         state.projects.unshift(project);
 
         if (!state.activeProjectId) {
@@ -315,91 +391,199 @@ $("#projectForm")?.addEventListener("submit", event => {
 
 $("#activeProjectSelect")?.addEventListener("change", event => {
     state.activeProjectId = event.target.value;
+
     if (state.activeProjectId) {
         localStorage.setItem(STORAGE.activeProject, state.activeProjectId);
     } else {
         localStorage.removeItem(STORAGE.activeProject);
     }
+
     updateContextStatus();
 });
 
 function updateContextStatus() {
-    const label = $("#contextStatus");
     const project = getProject($("#activeProjectSelect")?.value || "");
+    const label = $("#contextStatus");
+
     if (!label) return;
 
     if (!project) {
-        label.textContent = "Nenhum contexto de projeto será enviado.";
+        label.textContent = "Nenhum arquivo será usado como contexto.";
         return;
     }
 
-    const sourceCount = project.sources?.length || 0;
-    label.textContent = `${project.name}: descrição + ${sourceCount} fonte(s) serão usadas como contexto.`;
+    const documents = project.documents?.length || 0;
+    const chunks = (project.documents || []).reduce((sum, doc) => sum + (doc.chunks?.length || 0), 0);
+    label.textContent = `${project.name}: ${documents} documento(s) e ${chunks} trecho(s) disponíveis para busca.`;
 }
 
-// Fontes
-function addSourceToProject(projectId, source) {
+// Upload conhecimento
+function renderSelectedFilesPreview() {
+    const container = $("#selectedFilesPreview");
+    const files = [...($("#localFileInput")?.files || [])];
+
+    if (!container) return;
+
+    container.innerHTML = "";
+
+    files.forEach(file => {
+        const tag = document.createElement("span");
+        tag.className = "selected-file-tag";
+        tag.textContent = `${file.name} · ${humanSize(file.size)}`;
+        container.appendChild(tag);
+    });
+}
+
+$("#localFileInput")?.addEventListener("change", renderSelectedFilesPreview);
+
+async function importSingleFile(file, projectId) {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch("/api/files/extract", {
+        method: "POST",
+        headers: { "X-CSRFToken": csrfToken },
+        body: formData,
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Falha ao importar.");
+
     const project = getProject(projectId);
     if (!project) throw new Error("Projeto não encontrado.");
 
-    project.sources = project.sources || [];
-    project.sources.unshift({
-        id: uid("source"),
-        title: source.title || "Fonte sem título",
-        type: source.sourceType || source.type || "arquivo",
-        content: source.content || "",
-        webUrl: source.webUrl || "",
+    project.documents = project.documents || [];
+    project.documents.unshift({
+        id: uid("doc"),
+        title: data.title,
+        size: file.size,
         importedAt: new Date().toISOString(),
-        lastModifiedTime: source.lastModifiedTime || "",
-        size: source.size || 0,
+        characters: data.characters || data.content?.length || 0,
+        chunks: data.chunks || [],
     });
+
     project.updatedAt = new Date().toISOString();
-    saveProjects();
 }
 
-function renderSources() {
-    const grid = $("#sourceGrid");
-    const empty = $("#sourceEmpty");
+$("#importLocalFileBtn")?.addEventListener("click", async () => {
+    const projectId = $("#fileProjectSelect")?.value;
+    const files = [...($("#localFileInput")?.files || [])];
+    const status = $("#fileImportStatus");
+    const button = $("#importLocalFileBtn");
+
+    if (!projectId) {
+        status.textContent = "Selecione um projeto de destino.";
+        return;
+    }
+
+    if (!files.length) {
+        status.textContent = "Selecione pelo menos um arquivo.";
+        return;
+    }
+
+    const tooLarge = files.find(file => file.size > 15 * 1024 * 1024);
+    if (tooLarge) {
+        status.textContent = `${tooLarge.name} ultrapassa o limite de 15 MB.`;
+        return;
+    }
+
+    button.disabled = true;
+    let success = 0;
+    const errors = [];
+
+    for (const [index, file] of files.entries()) {
+        status.textContent = `Importando ${index + 1}/${files.length}: ${file.name}...`;
+
+        try {
+            await importSingleFile(file, projectId);
+            success += 1;
+        } catch (error) {
+            errors.push(`${file.name}: ${error.message}`);
+        }
+    }
+
+    saveProjects();
+
+    $("#localFileInput").value = "";
+    renderSelectedFilesPreview();
+
+    if (errors.length) {
+        status.textContent = `${success} arquivo(s) importado(s). Falhas: ${errors.join(" | ")}`;
+    } else {
+        status.textContent = `${success} arquivo(s) importado(s) com sucesso. A IA já pode consultar esse conteúdo.`;
+    }
+
+    button.disabled = false;
+});
+
+// Documentos
+function renderKnowledgeDocuments() {
+    const grid = $("#knowledgeDocumentGrid");
+    const empty = $("#knowledgeEmpty");
     if (!grid || !empty) return;
 
-    grid.innerHTML = "";
-    const filterId = $("#sourceProjectFilter")?.value || "";
-    const projects = filterId ? state.projects.filter(p => p.id === filterId) : state.projects;
+    const projectFilter = $("#knowledgeProjectFilter")?.value || "";
+    const term = normalizeForSearch($("#knowledgeSearch")?.value || "");
 
-    const all = [];
-    projects.forEach(project => {
-        (project.sources || []).forEach(source => all.push({ project, source }));
+    const projects = projectFilter
+        ? state.projects.filter(project => project.id === projectFilter)
+        : state.projects;
+
+    const items = allDocuments(projects).filter(({ project, document }) => {
+        if (!term) return true;
+
+        const sample = (document.chunks || []).slice(0, 4).map(chunk => chunk.text).join(" ");
+        return normalizeForSearch(`${project.name} ${document.title} ${sample}`).includes(term);
     });
 
-    if (!all.length) {
+    grid.innerHTML = "";
+
+    if (!items.length) {
         empty.classList.remove("hidden-panel");
         return;
     }
 
     empty.classList.add("hidden-panel");
 
-    all.forEach(({ project, source }) => {
+    items.forEach(({ project, document }) => {
         const card = document.createElement("article");
-        card.className = "source-card";
+        card.className = "knowledge-document-card";
+
         card.innerHTML = `
-            <div class="source-card-head">
-                <span class="source-type">${escapeText(source.type)}</span>
-                <span>${escapeText(project.name)}</span>
-            </div>
-            <h3>${escapeText(source.title)}</h3>
-            <p>${escapeText((source.content || "").slice(0, 240))}${(source.content || "").length > 240 ? "…" : ""}</p>
-            <div class="source-card-footer">
-                <small>Importado ${formatDate(source.importedAt)}</small>
+            <div class="knowledge-doc-head">
+                <div class="knowledge-doc-icon">F</div>
                 <div>
-                    ${source.webUrl ? `<a href="${escapeText(source.webUrl)}" target="_blank" rel="noopener">Abrir origem</a>` : ""}
-                    <button type="button" class="danger-text-btn">Remover</button>
+                    <strong>${escapeText(document.title)}</strong>
+                    <small>${escapeText(project.name)}</small>
+                </div>
+            </div>
+            <div class="knowledge-doc-stats">
+                <span>${document.chunks?.length || 0} trechos</span>
+                <span>${humanSize(document.size || 0)}</span>
+                <span>${Number(document.characters || 0).toLocaleString("pt-BR")} caracteres</span>
+            </div>
+            <p>${escapeText((document.chunks?.[0]?.text || "Documento sem prévia.").slice(0, 260))}</p>
+            <div class="knowledge-doc-footer">
+                <small>${formatDate(document.importedAt)}</small>
+                <div>
+                    <button type="button" data-action="activate">Usar projeto</button>
+                    <button type="button" data-action="delete" class="danger-text-btn">Excluir</button>
                 </div>
             </div>
         `;
 
-        card.querySelector("button")?.addEventListener("click", () => {
-            if (!confirm(`Remover a fonte "${source.title}" deste projeto?`)) return;
-            project.sources = (project.sources || []).filter(s => s.id !== source.id);
+        card.querySelector('[data-action="activate"]').addEventListener("click", () => {
+            state.activeProjectId = project.id;
+            localStorage.setItem(STORAGE.activeProject, project.id);
+            renderProjectOptions();
+            $("#agent")?.scrollIntoView({ behavior: "smooth" });
+        });
+
+        card.querySelector('[data-action="delete"]').addEventListener("click", () => {
+            if (!confirm(`Excluir "${document.title}" da base de conhecimento?`)) return;
+
+            project.documents = (project.documents || []).filter(item => item.id !== document.id);
+            project.updatedAt = new Date().toISOString();
             saveProjects();
         });
 
@@ -407,293 +591,14 @@ function renderSources() {
     });
 }
 
-$("#sourceProjectFilter")?.addEventListener("change", renderSources);
-
-// Arquivo local
-$("#importLocalFileBtn")?.addEventListener("click", async () => {
-    const projectId = $("#fileProjectSelect")?.value;
-    const input = $("#localFileInput");
-    const file = input?.files?.[0];
-    const status = $("#fileImportStatus");
-
-    if (!projectId) {
-        status.textContent = "Selecione um projeto de destino.";
-        return;
-    }
-
-    if (!file) {
-        status.textContent = "Selecione um arquivo.";
-        return;
-    }
-
-    if (file.size > 12 * 1024 * 1024) {
-        status.textContent = "O arquivo deve ter no máximo 12 MB.";
-        return;
-    }
-
-    status.textContent = `Lendo ${file.name}...`;
-
-    const form = new FormData();
-    form.append("file", file);
-
-    try {
-        const response = await fetch("/api/files/extract", {
-            method: "POST",
-            headers: { "X-CSRFToken": csrfToken },
-            body: form,
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Falha ao importar.");
-
-        addSourceToProject(projectId, data);
-        input.value = "";
-        status.textContent = `${file.name} importado para o projeto com sucesso.`;
-    } catch (error) {
-        status.textContent = `Erro: ${error.message}`;
-    }
-});
-
-// Microsoft
-async function loadMicrosoftStatus() {
-    try {
-        const response = await fetch("/api/microsoft/status");
-        const data = await response.json();
-
-        state.msConfigured = Boolean(data.configured);
-        state.msConnected = Boolean(data.connected);
-
-        const title = $("#msStatusTitle");
-        const detail = $("#msStatusDetail");
-        const connectBtn = $("#msConnectBtn");
-        const disconnectBtn = $("#msDisconnectBtn");
-
-        if (!data.configured) {
-            title.textContent = "Integração ainda não configurada";
-            detail.textContent = "Cadastre MS_CLIENT_ID, MS_CLIENT_SECRET e MS_REDIRECT_URI no Render.";
-            connectBtn?.classList.add("disabled-link");
-            $("#msStat").textContent = "SETUP";
-        } else if (data.connected) {
-            const profileName = data.profile?.displayName || data.profile?.mail || "Conta Microsoft";
-            title.textContent = `Microsoft conectado: ${profileName}`;
-            detail.textContent = "OneNote e OneDrive estão disponíveis nesta sessão.";
-            connectBtn?.classList.add("hidden-panel");
-            disconnectBtn?.classList.remove("hidden-panel");
-            $("#msStat").textContent = "ON";
-            loadOneNote();
-            loadOneDrive("");
-        } else {
-            title.textContent = "Microsoft pronto para conectar";
-            detail.textContent = "Conecte sua conta para acessar OneNote e OneDrive.";
-            connectBtn?.classList.remove("hidden-panel");
-            disconnectBtn?.classList.add("hidden-panel");
-            $("#msStat").textContent = "OFF";
-        }
-    } catch {
-        $("#msStatusTitle").textContent = "Status Microsoft indisponível";
-    }
-}
-
-$("#msDisconnectBtn")?.addEventListener("click", async () => {
-    try {
-        await fetch("/microsoft/disconnect", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-CSRFToken": csrfToken,
-            },
-            body: "{}",
-        });
-        state.msConnected = false;
-        $("#onenoteList").innerHTML = "";
-        $("#onedriveList").innerHTML = "";
-        loadMicrosoftStatus();
-    } catch {
-        alert("Não foi possível desconectar a conta Microsoft.");
-    }
-});
-
-$$("[data-integration-tab]").forEach(button => {
-    button.addEventListener("click", () => {
-        $$("[data-integration-tab]").forEach(b => b.classList.remove("active"));
-        button.classList.add("active");
-        const tab = button.dataset.integrationTab;
-        $("#onenotePanel").classList.toggle("hidden-panel", tab !== "onenote");
-        $("#onedrivePanel").classList.toggle("hidden-panel", tab !== "onedrive");
-    });
-});
-
-async function loadOneNote() {
-    const list = $("#onenoteList");
-    const empty = $("#onenoteEmpty");
-    if (!state.msConnected) return;
-
-    list.innerHTML = `<div class="loading-resource">Carregando páginas do OneNote...</div>`;
-
-    try {
-        const response = await fetch("/api/microsoft/onenote/pages");
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Erro no OneNote.");
-
-        list.innerHTML = "";
-        const pages = data.pages || [];
-
-        if (!pages.length) {
-            empty.classList.remove("hidden-panel");
-            empty.querySelector("span").textContent = "Nenhuma página encontrada no OneNote.";
-            return;
-        }
-
-        empty.classList.add("hidden-panel");
-
-        pages.forEach(page => {
-            const item = document.createElement("div");
-            item.className = "resource-item";
-            item.innerHTML = `
-                <div class="resource-main">
-                    <div class="resource-icon">N</div>
-                    <div>
-                        <strong>${escapeText(page.title)}</strong>
-                        <small>${escapeText(page.section || "OneNote")} · ${formatDate(page.lastModifiedTime)}</small>
-                    </div>
-                </div>
-                <button type="button" class="resource-import-btn">Importar</button>
-            `;
-
-            item.querySelector("button").addEventListener("click", async () => {
-                const projectId = $("#onenoteProjectSelect")?.value;
-                if (!projectId) {
-                    alert("Selecione um projeto de destino.");
-                    return;
-                }
-
-                const btn = item.querySelector("button");
-                btn.disabled = true;
-                btn.textContent = "Importando...";
-
-                try {
-                    const response = await fetch(`/api/microsoft/onenote/page/${encodeURIComponent(page.id)}`);
-                    const source = await response.json();
-                    if (!response.ok) throw new Error(source.error || "Falha ao importar.");
-                    source.webUrl = page.webUrl || "";
-                    addSourceToProject(projectId, source);
-                    btn.textContent = "Importado ✓";
-                } catch (error) {
-                    btn.textContent = "Tentar novamente";
-                    alert(error.message);
-                } finally {
-                    btn.disabled = false;
-                }
-            });
-
-            list.appendChild(item);
-        });
-    } catch (error) {
-        list.innerHTML = `<div class="integration-error">${escapeText(error.message)}</div>`;
-    }
-}
-
-$("#loadOneNoteBtn")?.addEventListener("click", loadOneNote);
-
-function updateOneDrivePath() {
-    const names = state.oneDriveFolderStack.map(item => item.name);
-    $("#onedrivePath").textContent = `OneDrive / ${names.join(" / ")}`;
-}
-
-async function loadOneDrive(folderId = "") {
-    const list = $("#onedriveList");
-    const empty = $("#onedriveEmpty");
-    if (!state.msConnected) return;
-
-    list.innerHTML = `<div class="loading-resource">Carregando OneDrive...</div>`;
-
-    try {
-        const query = folderId ? `?item_id=${encodeURIComponent(folderId)}` : "";
-        const response = await fetch(`/api/microsoft/onedrive/items${query}`);
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Erro no OneDrive.");
-
-        list.innerHTML = "";
-        const items = data.items || [];
-
-        if (!items.length) {
-            empty.classList.remove("hidden-panel");
-            empty.querySelector("span").textContent = "Esta pasta está vazia.";
-            return;
-        }
-
-        empty.classList.add("hidden-panel");
-
-        items.forEach(itemData => {
-            const item = document.createElement("div");
-            item.className = "resource-item";
-            const extension = itemData.isFolder ? "Pasta" : (itemData.name.split(".").pop() || "Arquivo").toUpperCase();
-
-            item.innerHTML = `
-                <div class="resource-main">
-                    <div class="resource-icon">${itemData.isFolder ? "▣" : "F"}</div>
-                    <div>
-                        <strong>${escapeText(itemData.name)}</strong>
-                        <small>${escapeText(extension)} · ${itemData.isFolder ? "" : humanSize(itemData.size)} ${formatDate(itemData.lastModifiedDateTime)}</small>
-                    </div>
-                </div>
-                <button type="button" class="resource-import-btn">${itemData.isFolder ? "Abrir" : "Importar"}</button>
-            `;
-
-            item.querySelector("button").addEventListener("click", async () => {
-                if (itemData.isFolder) {
-                    state.oneDriveFolderStack.push({ id: itemData.id, name: itemData.name });
-                    updateOneDrivePath();
-                    loadOneDrive(itemData.id);
-                    return;
-                }
-
-                const projectId = $("#onedriveProjectSelect")?.value;
-                if (!projectId) {
-                    alert("Selecione um projeto de destino.");
-                    return;
-                }
-
-                const btn = item.querySelector("button");
-                btn.disabled = true;
-                btn.textContent = "Importando...";
-
-                try {
-                    const response = await fetch(`/api/microsoft/onedrive/file/${encodeURIComponent(itemData.id)}`);
-                    const source = await response.json();
-                    if (!response.ok) throw new Error(source.error || "Falha ao importar.");
-                    addSourceToProject(projectId, source);
-                    btn.textContent = "Importado ✓";
-                } catch (error) {
-                    btn.textContent = "Tentar novamente";
-                    alert(error.message);
-                } finally {
-                    btn.disabled = false;
-                }
-            });
-
-            list.appendChild(item);
-        });
-    } catch (error) {
-        list.innerHTML = `<div class="integration-error">${escapeText(error.message)}</div>`;
-    }
-}
-
-$("#loadOneDriveBtn")?.addEventListener("click", () => {
-    const current = state.oneDriveFolderStack.at(-1)?.id || "";
-    loadOneDrive(current);
-});
-
-$("#onedriveRootBtn")?.addEventListener("click", () => {
-    state.oneDriveFolderStack = [];
-    updateOneDrivePath();
-    loadOneDrive("");
-});
+$("#knowledgeProjectFilter")?.addEventListener("change", renderKnowledgeDocuments);
+$("#knowledgeSearch")?.addEventListener("input", renderKnowledgeDocuments);
 
 // Chat
 const chatWindow = $("#chatWindow");
 const chatInput = $("#chatInput");
 
-function appendMessage(text, type, persist = true, provider = "") {
+function appendMessage(text, type, persist = true, provider = "", documents = []) {
     const wrapper = document.createElement("div");
     wrapper.className = `message ${type === "user" ? "user-message" : "assistant-message"}`;
 
@@ -708,10 +613,15 @@ function appendMessage(text, type, persist = true, provider = "") {
     textEl.textContent = text;
     bubble.appendChild(textEl);
 
-    if (type === "assistant" && provider) {
+    if (type === "assistant" && (provider || documents.length)) {
         const meta = document.createElement("small");
         meta.className = "message-meta";
-        meta.textContent = `via ${provider}`;
+
+        const parts = [];
+        if (provider) parts.push(`via ${provider}`);
+        if (documents.length) parts.push(`fontes: ${documents.join(", ")}`);
+
+        meta.textContent = parts.join(" · ");
         bubble.appendChild(meta);
     }
 
@@ -721,7 +631,7 @@ function appendMessage(text, type, persist = true, provider = "") {
 
     if (persist) {
         const history = getChatHistory();
-        history.push({ text, type, provider, ts: Date.now() });
+        history.push({ text, type, provider, documents, ts: Date.now() });
         saveChatHistory(history);
     }
 }
@@ -729,7 +639,7 @@ function appendMessage(text, type, persist = true, provider = "") {
 function renderDefaultAssistant() {
     chatWindow.innerHTML = "";
     appendMessage(
-        "Olá. Sua central pessoal está pronta. Selecione um projeto ativo para eu usar os arquivos e fontes dele como contexto.",
+        "Olá. Selecione um projeto ativo e envie documentos. Quando você fizer uma pergunta, vou procurar automaticamente os trechos mais relevantes nesses arquivos.",
         "assistant",
         false
     );
@@ -737,17 +647,28 @@ function renderDefaultAssistant() {
 
 function loadChat() {
     const history = getChatHistory();
+
     if (!history.length) {
         renderDefaultAssistant();
         return;
     }
 
     chatWindow.innerHTML = "";
-    history.forEach(item => appendMessage(item.text, item.type, false, item.provider || ""));
+
+    history.forEach(item => {
+        appendMessage(
+            item.text,
+            item.type,
+            false,
+            item.provider || "",
+            item.documents || []
+        );
+    });
 }
 
 async function loadAgentStatus() {
     const status = $("#agentStatus");
+
     try {
         const response = await fetch("/api/agent/status");
         const data = await response.json();
@@ -772,11 +693,21 @@ async function sendMessage(text) {
     if (!message) return;
 
     const projectId = $("#activeProjectSelect")?.value || "";
-    const projectContext = buildProjectContext(projectId);
+    const retrieval = buildProjectContext(projectId, message);
 
     appendMessage(message, "user");
     chatInput.value = "";
     chatInput.style.height = "auto";
+
+    const indicator = $("#retrievalIndicator");
+
+    if (projectId) {
+        indicator?.classList.add("retrieval-active");
+        indicator.querySelector("strong").textContent = `Contexto preparado: ${retrieval.chunkCount} trecho(s) relevante(s)`;
+        indicator.querySelector("small").textContent = retrieval.usedDocuments.length
+            ? `Arquivos consultados: ${retrieval.usedDocuments.join(", ")}`
+            : "Nenhum trecho relevante foi encontrado; o agente usará a descrição do projeto.";
+    }
 
     const history = getChatHistory().slice(-16).map(item => ({
         role: item.type === "assistant" ? "assistant" : "user",
@@ -793,7 +724,7 @@ async function sendMessage(text) {
             body: JSON.stringify({
                 message,
                 history,
-                projectContext,
+                projectContext: retrieval.context,
             }),
         });
 
@@ -801,11 +732,25 @@ async function sendMessage(text) {
         if (!response.ok) throw new Error(data.error || "Não foi possível enviar a mensagem.");
 
         const providerLabel = `${data.provider} · ${data.model}`;
-        appendMessage(data.reply, "assistant", true, providerLabel);
-        addSearchHistory(message, projectId, providerLabel);
+
+        appendMessage(
+            data.reply,
+            "assistant",
+            true,
+            providerLabel,
+            retrieval.usedDocuments
+        );
+
+        addSearchHistory(
+            message,
+            projectId,
+            providerLabel,
+            retrieval.usedDocuments
+        );
+
     } catch (error) {
         appendMessage(`Erro: ${error.message}`, "assistant");
-        addSearchHistory(message, projectId, "Erro");
+        addSearchHistory(message, projectId, "Erro", retrieval.usedDocuments);
     }
 }
 
@@ -831,7 +776,7 @@ $$("[data-prompt]").forEach(button => {
 });
 
 $("#clearChatBtn")?.addEventListener("click", () => {
-    if (!confirm("Limpar a conversa atual? O histórico de pesquisas continuará disponível na seção Histórico.")) return;
+    if (!confirm("Limpar a conversa atual? O histórico de pesquisas continuará disponível.")) return;
     localStorage.removeItem(STORAGE.chat);
     renderDefaultAssistant();
 });
@@ -840,30 +785,36 @@ $("#clearChatBtn")?.addEventListener("click", () => {
 function renderHistory() {
     const list = $("#historyList");
     const empty = $("#historyEmpty");
+
     if (!list || !empty) return;
 
-    const term = ($("#historySearch")?.value || "").trim().toLowerCase();
-    const items = getSearchHistory().filter(item => {
+    const term = normalizeForSearch($("#historySearch")?.value || "");
+
+    const history = getSearchHistory().filter(item => {
         if (!term) return true;
-        return `${item.query} ${item.projectName} ${item.provider}`.toLowerCase().includes(term);
+
+        return normalizeForSearch(
+            `${item.query} ${item.projectName} ${item.provider} ${(item.usedDocuments || []).join(" ")}`
+        ).includes(term);
     });
 
     list.innerHTML = "";
 
-    if (!items.length) {
+    if (!history.length) {
         empty.classList.remove("hidden-panel");
         return;
     }
 
     empty.classList.add("hidden-panel");
 
-    items.forEach(item => {
+    history.forEach(item => {
         const row = document.createElement("article");
         row.className = "history-row";
+
         row.innerHTML = `
             <div class="history-query">
                 <strong>${escapeText(item.query)}</strong>
-                <small>${escapeText(item.projectName)} · ${formatDate(item.createdAt)}</small>
+                <small>${escapeText(item.projectName)} · ${formatDate(item.createdAt)}${item.usedDocuments?.length ? ` · ${escapeText(item.usedDocuments.join(", "))}` : ""}</small>
             </div>
             <div class="history-provider">${escapeText(item.provider || "—")}</div>
             <button type="button" class="history-reuse-btn">Reutilizar</button>
@@ -872,12 +823,19 @@ function renderHistory() {
 
         row.querySelector(".history-reuse-btn").addEventListener("click", () => {
             chatInput.value = item.query;
-            document.querySelector("#agent")?.scrollIntoView({ behavior: "smooth" });
+
+            if (item.projectId && getProject(item.projectId)) {
+                state.activeProjectId = item.projectId;
+                localStorage.setItem(STORAGE.activeProject, item.projectId);
+                renderProjectOptions();
+            }
+
+            $("#agent")?.scrollIntoView({ behavior: "smooth" });
             chatInput.focus();
         });
 
         row.querySelector(".history-delete-btn").addEventListener("click", () => {
-            const next = getSearchHistory().filter(h => h.id !== item.id);
+            const next = getSearchHistory().filter(historyItem => historyItem.id !== item.id);
             saveJson(STORAGE.history, next);
             renderHistory();
             updateStats();
@@ -891,6 +849,7 @@ $("#historySearch")?.addEventListener("input", renderHistory);
 
 $("#clearHistoryBtn")?.addEventListener("click", () => {
     if (!confirm("Apagar todo o histórico de pesquisas deste navegador?")) return;
+
     localStorage.removeItem(STORAGE.history);
     renderHistory();
     updateStats();
@@ -899,7 +858,7 @@ $("#clearHistoryBtn")?.addEventListener("click", () => {
 // Backup
 $("#exportBackupBtn")?.addEventListener("click", () => {
     const backup = {
-        version: 1,
+        version: 2,
         exportedAt: new Date().toISOString(),
         projects: state.projects,
         chat: getChatHistory(),
@@ -907,13 +866,18 @@ $("#exportBackupBtn")?.addEventListener("click", () => {
         activeProjectId: state.activeProjectId,
     };
 
-    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const blob = new Blob(
+        [JSON.stringify(backup, null, 2)],
+        { type: "application/json" }
+    );
+
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = `alexandre-ai-backup-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     URL.revokeObjectURL(link.href);
-    $("#backupStatus").textContent = "Backup exportado com sucesso.";
+
+    $("#backupStatus").textContent = "Backup completo exportado com sucesso.";
 });
 
 $("#importBackupInput")?.addEventListener("change", async event => {
@@ -922,7 +886,10 @@ $("#importBackupInput")?.addEventListener("change", async event => {
 
     try {
         const data = JSON.parse(await file.text());
-        if (!Array.isArray(data.projects)) throw new Error("Backup inválido.");
+
+        if (!Array.isArray(data.projects)) {
+            throw new Error("Backup inválido.");
+        }
 
         state.projects = data.projects.map(ensureProjectShape);
         state.activeProjectId = data.activeProjectId || "";
@@ -937,9 +904,10 @@ $("#importBackupInput")?.addEventListener("change", async event => {
             localStorage.removeItem(STORAGE.activeProject);
         }
 
-        renderAllProjectDependentUI();
+        renderProjectDependentUI();
         loadChat();
         renderHistory();
+
         $("#backupStatus").textContent = "Backup restaurado com sucesso.";
     } catch (error) {
         $("#backupStatus").textContent = `Erro ao importar backup: ${error.message}`;
@@ -950,20 +918,20 @@ $("#importBackupInput")?.addEventListener("change", async event => {
 
 function updateStats() {
     $("#projectCount").textContent = state.projects.length;
-    $("#sourceCount").textContent = totalSources();
+    $("#documentCount").textContent = allDocuments().length;
+    $("#chunkCount").textContent = totalChunks();
     $("#historyCount").textContent = getSearchHistory().length;
 }
 
-function renderAllProjectDependentUI() {
+function renderProjectDependentUI() {
     renderProjectOptions();
     renderProjects();
-    renderSources();
+    renderKnowledgeDocuments();
     updateStats();
 }
 
-renderAllProjectDependentUI();
+renderProjectDependentUI();
+renderSelectedFilesPreview();
 loadChat();
 renderHistory();
 loadAgentStatus();
-loadMicrosoftStatus();
-updateOneDrivePath();
