@@ -112,3 +112,13 @@ gunicorn app:app
 - Após configurar MFA, desative `MFA_SETUP_ENABLED`.
 - O login MFA tem validade de 5 minutos para concluir a segunda etapa.
 - Após 5 códigos MFA incorretos, é necessário iniciar o login novamente.
+
+
+## Atualização V5
+
+- Dashboard redesenhado com visual futurista e profissional
+- Hero principal em estilo command center
+- Painéis de segurança, status do sistema e módulos
+- Área do Agente IA com visual modernizado
+- Botão para limpar histórico local da conversa
+- Layout alinhado visualmente com a nova tela de login

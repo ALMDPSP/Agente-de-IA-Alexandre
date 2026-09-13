@@ -23,6 +23,9 @@ const chatInput = document.querySelector("#chatInput");
 const chatWindow = document.querySelector("#chatWindow");
 const csrfToken = document.querySelector("#csrfToken")?.value;
 const agentStatus = document.querySelector("#agentStatus");
+const providerChainEl = document.querySelector("#providerChain");
+const mfaModeEl = document.querySelector("#mfaMode");
+const clearChatBtn = document.querySelector("#clearChatBtn");
 
 const CHAT_KEY = "alexandre_ai_chat_history_v2";
 
@@ -36,6 +39,10 @@ function getHistory() {
 
 function saveHistory(history) {
     localStorage.setItem(CHAT_KEY, JSON.stringify(history.slice(-100)));
+}
+
+function clearHistory() {
+    localStorage.removeItem(CHAT_KEY);
 }
 
 function appendMessage(text, type, persist = true, provider = "") {
@@ -73,13 +80,25 @@ function appendMessage(text, type, persist = true, provider = "") {
     }
 }
 
+function renderDefaultAssistant() {
+    chatWindow.innerHTML = `
+        <div class="message assistant-message">
+            <div class="message-avatar">AI</div>
+            <div class="message-bubble">
+                Olá. Seu centro de comando está pronto. Posso te ajudar com ideias, estudos, tarefas, documentação e melhorias do seu projeto.
+            </div>
+        </div>
+    `;
+}
+
 function loadHistory() {
     const history = getHistory();
-    if (!history.length) return;
+    if (!history.length) {
+        renderDefaultAssistant();
+        return;
+    }
 
-    const initial = chatWindow.querySelector(".assistant-message");
-    if (initial) initial.remove();
-
+    chatWindow.innerHTML = "";
     history.forEach(item => appendMessage(
         item.text,
         item.type,
@@ -97,13 +116,19 @@ async function loadAgentStatus() {
 
         if (!response.ok || !data.configured?.length) {
             agentStatus.innerHTML = "<i></i> IA não configurada";
+            if (providerChainEl) providerChainEl.textContent = "Não configurada";
             return;
         }
 
         const names = data.configured.map(item => item.provider).join(" → ");
         agentStatus.innerHTML = `<i></i> ${names}`;
+        if (providerChainEl) providerChainEl.textContent = names;
+        if (mfaModeEl && typeof data.mfa !== "undefined") {
+            mfaModeEl.textContent = data.mfa ? "Ativo" : "Desativado";
+        }
     } catch {
         agentStatus.innerHTML = "<i></i> Status indisponível";
+        if (providerChainEl) providerChainEl.textContent = "Indisponível";
     }
 }
 
@@ -166,6 +191,11 @@ chatInput?.addEventListener("input", () => {
 
 document.querySelectorAll("[data-prompt]").forEach(button => {
     button.addEventListener("click", () => sendMessage(button.dataset.prompt || ""));
+});
+
+clearChatBtn?.addEventListener("click", () => {
+    clearHistory();
+    renderDefaultAssistant();
 });
 
 loadHistory();

@@ -3,13 +3,17 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#08111f">
+    <meta name="theme-color" content="#050b15">
     <title>Dashboard | Alexandre AI</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
-<body class="dashboard-body">
-    <div class="app-shell">
-        <aside class="sidebar" id="sidebar">
+<body class="dashboard-body dashboard-futuristic-body">
+    <div class="dashboard-bg-grid" aria-hidden="true"></div>
+    <div class="dashboard-aurora dashboard-aurora-a" aria-hidden="true"></div>
+    <div class="dashboard-aurora dashboard-aurora-b" aria-hidden="true"></div>
+
+    <div class="app-shell futuristic-app-shell">
+        <aside class="sidebar futuristic-sidebar" id="sidebar">
             <div class="sidebar-top">
                 <a class="brand" href="{{ url_for('dashboard') }}">
                     <span class="brand-mark">A</span>
@@ -18,15 +22,26 @@
                 <button class="sidebar-close" id="sidebarClose" aria-label="Fechar menu">×</button>
             </div>
 
-            <nav class="nav-menu">
+            <div class="sidebar-panel">
+                <span class="sidebar-panel-label">NÚCLEO PESSOAL</span>
+                <strong>Central Inteligente</strong>
+                <small>Projetos, conhecimento, tarefas e IA em um único ambiente.</small>
+            </div>
+
+            <nav class="nav-menu futuristic-nav">
                 <a class="nav-item active" href="#dashboard"><span>⌂</span><span>Dashboard</span></a>
                 <a class="nav-item" href="#agent"><span>✦</span><span>Meu Agente IA</span></a>
-                <a class="nav-item" href="#projects"><span>▣</span><span>Projetos</span></a>
-                <a class="nav-item" href="#documents"><span>▤</span><span>Documentos</span></a>
-                <a class="nav-item" href="#notes"><span>✎</span><span>Anotações</span></a>
-                <a class="nav-item" href="#tasks"><span>✓</span><span>Tarefas</span></a>
-                <a class="nav-item" href="#memory"><span>◈</span><span>Conhecimento</span></a>
+                <a class="nav-item" href="#modules"><span>▣</span><span>Módulos</span></a>
+                <a class="nav-item" href="#activities"><span>◎</span><span>Atividades</span></a>
+                <a class="nav-item" href="#roadmap"><span>◈</span><span>Evolução</span></a>
+                <a class="nav-item" href="#security"><span>◇</span><span>Segurança</span></a>
             </nav>
+
+            <div class="sidebar-tech-card">
+                <span class="eyebrow">INFRA</span>
+                <strong>Render + IA Gateway</strong>
+                <small>Groq → Gemini → Cloudflare</small>
+            </div>
 
             <div class="sidebar-bottom">
                 <a class="nav-item" href="#settings"><span>⚙</span><span>Configurações</span></a>
@@ -39,117 +54,247 @@
 
         <div class="mobile-overlay" id="mobileOverlay"></div>
 
-        <main class="main-content">
-            <header class="topbar">
+        <main class="main-content futuristic-main-content">
+            <header class="topbar futuristic-topbar">
                 <div class="topbar-left">
                     <button class="menu-toggle" id="menuToggle" aria-label="Abrir menu">☰</button>
                     <div>
-                        <span class="topbar-kicker">CENTRAL PESSOAL</span>
-                        <h1>Dashboard</h1>
+                        <span class="topbar-kicker">COMMAND CENTER</span>
+                        <h1>Alexandre AI</h1>
                     </div>
                 </div>
 
-                <div class="profile-chip">
-                    <div class="profile-avatar">{{ user.name[:1]|upper }}</div>
-                    <div>
-                        <strong>{{ user.name }}</strong>
-                        <small>Administrador</small>
+                <div class="topbar-right">
+                    <div class="topbar-pill"><i></i> Ambiente privado</div>
+                    <div class="profile-chip futuristic-profile-chip">
+                        <div class="profile-avatar">{{ user.name[:1]|upper }}</div>
+                        <div>
+                            <strong>{{ user.name }}</strong>
+                            <small>{{ "MFA ativo" if mfa_enabled else "Acesso padrão" }}</small>
+                        </div>
                     </div>
                 </div>
             </header>
 
-            <section class="dashboard-grid" id="dashboard">
-                <div class="welcome-card">
-                    <div>
-                        <span class="eyebrow">ALEXANDRE AI</span>
-                        <h2>Olá, {{ user.name }}.</h2>
-                        <p>Seu espaço pessoal está pronto. Use a IA para transformar ideias, organizar projetos e acelerar suas tarefas.</p>
+            <section class="dashboard-grid futuristic-dashboard-grid" id="dashboard">
+                <section class="command-hero">
+                    <div class="command-hero-copy">
+                        <span class="eyebrow">PERSONAL INTELLIGENCE HUB</span>
+                        <h2>Bem-vindo, {{ user.name }}.</h2>
+                        <p>Seu dashboard agora opera como um centro de comando pessoal, com design futurista, segurança avançada e acesso rápido ao seu agente de IA.</p>
+
+                        <div class="hero-chip-row">
+                            <span>◆ IA com fallback</span>
+                            <span>◆ Sessão segura</span>
+                            <span>◆ Histórico local</span>
+                            {% if mfa_enabled %}
+                            <span>◆ 2FA habilitado</span>
+                            {% endif %}
+                        </div>
+
+                        <div class="hero-actions">
+                            <a href="#agent" class="hero-action primary-link-action">Abrir Agente IA</a>
+                            <a href="#modules" class="hero-action secondary-link-action">Ver módulos</a>
+                        </div>
                     </div>
-                    <div class="welcome-glow">✦</div>
-                </div>
 
-                <div class="stat-grid">
-                    <article class="stat-card">
+                    <div class="command-hero-visual" aria-hidden="true">
+                        <div class="hero-orbit orbit-a"></div>
+                        <div class="hero-orbit orbit-b"></div>
+                        <div class="hero-orbit orbit-c"></div>
+                        <div class="hero-core">
+                            <span>AI</span>
+                        </div>
+                        <div class="hero-node hn1"></div>
+                        <div class="hero-node hn2"></div>
+                        <div class="hero-node hn3"></div>
+                        <div class="hero-node hn4"></div>
+                    </div>
+                </section>
+
+                <section class="stat-grid futuristic-stat-grid">
+                    <article class="stat-card futuristic-stat-card">
                         <div class="stat-icon">▣</div>
-                        <div><strong>0</strong><span>Projetos</span></div>
+                        <div><strong>4</strong><span>Módulos iniciais</span></div>
                     </article>
-                    <article class="stat-card">
-                        <div class="stat-icon">✓</div>
-                        <div><strong>0</strong><span>Tarefas</span></div>
+                    <article class="stat-card futuristic-stat-card">
+                        <div class="stat-icon">✦</div>
+                        <div><strong>3</strong><span>Provedores de IA</span></div>
                     </article>
-                    <article class="stat-card">
-                        <div class="stat-icon">▤</div>
-                        <div><strong>0</strong><span>Documentos</span></div>
+                    <article class="stat-card futuristic-stat-card">
+                        <div class="stat-icon">◇</div>
+                        <div><strong>{{ "2FA" if mfa_enabled else "1FA" }}</strong><span>Camada de acesso</span></div>
                     </article>
-                    <article class="stat-card">
-                        <div class="stat-icon">◈</div>
-                        <div><strong>0</strong><span>Memórias</span></div>
+                    <article class="stat-card futuristic-stat-card">
+                        <div class="stat-icon">◎</div>
+                        <div><strong>100%</strong><span>Central pessoal</span></div>
                     </article>
-                </div>
+                </section>
 
-                <section class="agent-card" id="agent">
+                <section class="agent-hub-card" id="agent">
                     <div class="section-heading">
                         <div>
-                            <span class="eyebrow">ASSISTENTE PESSOAL</span>
+                            <span class="eyebrow">LIVE AI TERMINAL</span>
                             <h2>Meu Agente IA</h2>
                         </div>
-                        <span class="status-pill" id="agentStatus"><i></i> Verificando IA...</span>
+                        <div class="agent-heading-tools">
+                            <span class="status-pill" id="agentStatus"><i></i> Verificando IA...</span>
+                            <button type="button" class="ghost-action" id="clearChatBtn">Limpar conversa</button>
+                        </div>
                     </div>
 
-                    <div class="chat-window" id="chatWindow">
+                    <div class="chat-window futuristic-chat-window" id="chatWindow">
                         <div class="message assistant-message">
                             <div class="message-avatar">AI</div>
                             <div class="message-bubble">
-                                Olá, {{ user.name }}. Sua central está pronta. Na próxima etapa vamos conectar meu motor de IA e minhas ferramentas.
+                                Olá, {{ user.name }}. Seu centro de comando está pronto. Posso te ajudar com ideias, estudos, tarefas, documentação e melhorias do seu projeto.
                             </div>
                         </div>
                     </div>
 
-                    <form class="chat-composer" id="chatForm">
+                    <form class="chat-composer futuristic-composer" id="chatForm">
                         <input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
-                        <textarea id="chatInput" rows="1" placeholder="Pergunte qualquer coisa..." aria-label="Mensagem para o agente"></textarea>
+                        <textarea id="chatInput" rows="1" placeholder="Digite sua mensagem para o Alexandre AI..." aria-label="Mensagem para o agente"></textarea>
                         <button type="submit" aria-label="Enviar mensagem">➤</button>
                     </form>
 
-                    <div class="quick-actions">
-                        <button type="button" data-prompt="Quais são minhas tarefas de hoje?">Tarefas de hoje</button>
-                        <button type="button" data-prompt="Mostre meus projetos atuais.">Meus projetos</button>
-                        <button type="button" data-prompt="Quero registrar uma nova ideia.">Registrar ideia</button>
+                    <div class="quick-actions futuristic-quick-actions">
+                        <button type="button" data-prompt="Quero ideias para melhorar meu site com agente de IA.">Ideias para o site</button>
+                        <button type="button" data-prompt="Crie um resumo profissional sobre meu projeto Alexandre AI.">Resumo do projeto</button>
+                        <button type="button" data-prompt="Quais próximos recursos posso adicionar ao meu dashboard?">Próximos recursos</button>
+                        <button type="button" data-prompt="Me ajude a planejar tarefas técnicas para a próxima versão.">Planejar tarefas</button>
                     </div>
                 </section>
 
-                <section class="activity-card">
+                <aside class="insight-stack">
+                    <section class="mini-panel security-panel" id="security">
+                        <div class="section-heading compact-heading">
+                            <div>
+                                <span class="eyebrow">SECURITY STATUS</span>
+                                <h2>Segurança</h2>
+                            </div>
+                        </div>
+
+                        <div class="security-matrix">
+                            <div class="matrix-item">
+                                <small>Autenticação</small>
+                                <strong>{{ "Dupla autenticação" if mfa_enabled else "Acesso por senha" }}</strong>
+                            </div>
+                            <div class="matrix-item">
+                                <small>Armazenamento</small>
+                                <strong>Local / sem banco</strong>
+                            </div>
+                            <div class="matrix-item">
+                                <small>Sessão</small>
+                                <strong>Protegida</strong>
+                            </div>
+                            <div class="matrix-item">
+                                <small>IA ativa</small>
+                                <strong id="providerChain">Verificando...</strong>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="mini-panel status-panel">
+                        <div class="section-heading compact-heading">
+                            <div>
+                                <span class="eyebrow">SYSTEM MODE</span>
+                                <h2>Modo atual</h2>
+                            </div>
+                        </div>
+
+                        <div class="mode-list">
+                            <div class="mode-item"><span>Ambiente</span><strong>Produção</strong></div>
+                            <div class="mode-item"><span>Engine</span><strong>Agente Pessoal</strong></div>
+                            <div class="mode-item"><span>Histórico</span><strong>Browser local</strong></div>
+                            <div class="mode-item"><span>MFA</span><strong id="mfaMode">{{ "Ativo" if mfa_enabled else "Desativado" }}</strong></div>
+                        </div>
+                    </section>
+                </aside>
+
+                <section class="modules-panel" id="modules">
                     <div class="section-heading">
                         <div>
-                            <span class="eyebrow">HISTÓRICO</span>
+                            <span class="eyebrow">CORE MODULES</span>
+                            <h2>Módulos da central</h2>
+                        </div>
+                    </div>
+
+                    <div class="module-grid">
+                        <article class="module-card">
+                            <div class="module-icon">✦</div>
+                            <strong>Agente IA</strong>
+                            <p>Interação inteligente com histórico e fallback automático entre provedores.</p>
+                        </article>
+                        <article class="module-card">
+                            <div class="module-icon">▣</div>
+                            <strong>Projetos</strong>
+                            <p>Espaço preparado para centralizar ideias, iniciativas e evoluções do seu ambiente.</p>
+                        </article>
+                        <article class="module-card">
+                            <div class="module-icon">◎</div>
+                            <strong>Atividades</strong>
+                            <p>Bloco pronto para exibir eventos recentes, ações executadas e histórico de uso.</p>
+                        </article>
+                        <article class="module-card">
+                            <div class="module-icon">◇</div>
+                            <strong>Segurança</strong>
+                            <p>Login profissional com MFA por aplicativo autenticador e sessão protegida.</p>
+                        </article>
+                    </div>
+                </section>
+
+                <section class="activity-card futuristic-activity-card" id="activities">
+                    <div class="section-heading">
+                        <div>
+                            <span class="eyebrow">RECENT SIGNALS</span>
                             <h2>Atividades recentes</h2>
                         </div>
                     </div>
 
-                    <div class="empty-state">
-                        <span>◎</span>
-                        <strong>Nenhuma atividade ainda</strong>
-                        <p>Conforme você usar o site, suas atividades aparecerão aqui.</p>
+                    <div class="timeline-list">
+                        <div class="timeline-item">
+                            <span class="timeline-dot"></span>
+                            <div>
+                                <strong>Dashboard modernizado</strong>
+                                <small>Visual futurista alinhado à nova tela de login.</small>
+                            </div>
+                        </div>
+                        <div class="timeline-item">
+                            <span class="timeline-dot"></span>
+                            <div>
+                                <strong>Agente IA conectado</strong>
+                                <small>Estrutura pronta para Groq, Gemini e Cloudflare.</small>
+                            </div>
+                        </div>
+                        <div class="timeline-item">
+                            <span class="timeline-dot"></span>
+                            <div>
+                                <strong>Segurança reforçada</strong>
+                                <small>MFA por Authenticator integrado ao fluxo de acesso.</small>
+                            </div>
+                        </div>
                     </div>
                 </section>
 
-                <section class="roadmap-card">
+                <section class="roadmap-card futuristic-roadmap-card" id="roadmap">
                     <div class="section-heading">
                         <div>
-                            <span class="eyebrow">PRÓXIMAS ETAPAS</span>
-                            <h2>Evolução do seu agente</h2>
+                            <span class="eyebrow">NEXT EVOLUTION</span>
+                            <h2>Próximas evoluções</h2>
                         </div>
                     </div>
-                    <div class="roadmap-list">
-                        <div class="roadmap-item done"><span>1</span><div><strong>Interface</strong><small>Login e Dashboard</small></div></div>
-                        <div class="roadmap-item"><span>2</span><div><strong>IA</strong><small>Groq → Gemini → Cloudflare</small></div></div>
-                        <div class="roadmap-item"><span>3</span><div><strong>Ferramentas</strong><small>Projetos, tarefas e documentos</small></div></div>
-                        <div class="roadmap-item"><span>4</span><div><strong>Memória</strong><small>Conhecimento pessoal controlado</small></div></div>
+                    <div class="roadmap-list futuristic-roadmap-list">
+                        <div class="roadmap-item done"><span>1</span><div><strong>Login futurista</strong><small>Concluído com MFA</small></div></div>
+                        <div class="roadmap-item done"><span>2</span><div><strong>Dashboard futurista</strong><small>Concluído</small></div></div>
+                        <div class="roadmap-item"><span>3</span><div><strong>Módulo de projetos</strong><small>Cadastros e organização pessoal</small></div></div>
+                        <div class="roadmap-item"><span>4</span><div><strong>Notas e tarefas</strong><small>Planejamento produtivo</small></div></div>
+                        <div class="roadmap-item"><span>5</span><div><strong>Ferramentas do agente</strong><small>Ações reais no seu site</small></div></div>
                     </div>
                 </section>
             </section>
 
-            <footer class="app-footer">Alexandre AI · Central Pessoal</footer>
+            <footer class="app-footer futuristic-footer">Alexandre AI · Command Center · Secure Intelligence Workspace</footer>
         </main>
     </div>
 
