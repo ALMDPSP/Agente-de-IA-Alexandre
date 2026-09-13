@@ -130,3 +130,13 @@ gunicorn app:app
 - nova paleta em tons de preto, verde neon e cyber
 - animação de fundo estilo matriz com canvas
 - layout padronizado entre todas as telas de autenticação
+
+
+## V10 — Site Dark Unificado
+
+- todo o site no mesmo estilo dark
+- login, MFA, setup e dashboard com a mesma linguagem visual
+- animação tipo matrix também no dashboard
+- topo da página com ícone visual do Alexandre AI
+- melhorias de responsividade para celular
+- cards, menus e áreas internas no mesmo padrão cyber dark

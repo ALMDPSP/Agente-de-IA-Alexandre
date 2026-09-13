@@ -3,17 +3,19 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#050b15">
-    <title>Central Pessoal | Alexandre AI</title>
+    <meta name="theme-color" content="#030806">
+    <title>Alexandre AI | Central Pessoal</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
-<body class="dashboard-body dashboard-futuristic-body">
+<body class="dashboard-body dashboard-dark-matrix-body">
     <div class="dashboard-bg-grid" aria-hidden="true"></div>
     <div class="dashboard-aurora dashboard-aurora-a" aria-hidden="true"></div>
     <div class="dashboard-aurora dashboard-aurora-b" aria-hidden="true"></div>
+    <div class="auth-noise dashboard-noise" aria-hidden="true"></div>
+    <canvas class="matrix-canvas matrix-canvas-dashboard" id="matrixCanvasDashboard" aria-hidden="true"></canvas>
 
-    <div class="app-shell futuristic-app-shell">
-        <aside class="sidebar futuristic-sidebar" id="sidebar">
+    <div class="app-shell futuristic-app-shell dark-app-shell">
+        <aside class="sidebar futuristic-sidebar dark-sidebar" id="sidebar">
             <div class="sidebar-top">
                 <a class="brand" href="#dashboard">
                     <span class="brand-mark">A</span>
@@ -22,13 +24,13 @@
                 <button class="sidebar-close" id="sidebarClose" aria-label="Fechar menu">×</button>
             </div>
 
-            <div class="sidebar-panel">
-                <span class="sidebar-panel-label">NÚCLEO PESSOAL</span>
-                <strong>Central Inteligente</strong>
-                <small>Projetos, documentos e IA em um único ambiente privado.</small>
+            <div class="sidebar-panel dark-sidebar-panel">
+                <span class="sidebar-panel-label">PRIVATE AI CORE</span>
+                <strong>Command Center</strong>
+                <small>Projetos, arquivos, histórico e inteligência em um único ambiente dark.</small>
             </div>
 
-            <nav class="nav-menu futuristic-nav">
+            <nav class="nav-menu futuristic-nav dark-nav">
                 <a class="nav-item active" href="#dashboard"><span>⌂</span><span>Dashboard</span></a>
                 <a class="nav-item" href="#agent"><span>✦</span><span>Meu Agente IA</span></a>
                 <a class="nav-item" href="#projects"><span>▣</span><span>Projetos</span></a>
@@ -37,8 +39,8 @@
                 <a class="nav-item" href="#backup"><span>⇩</span><span>Backup</span></a>
             </nav>
 
-            <div class="sidebar-tech-card">
-                <span class="eyebrow">IA GATEWAY</span>
+            <div class="sidebar-tech-card dark-sidebar-tech-card">
+                <span class="eyebrow">AI GATEWAY</span>
                 <strong id="sidebarAiChain">Verificando...</strong>
                 <small>Fallback automático entre provedores.</small>
             </div>
@@ -53,19 +55,22 @@
 
         <div class="mobile-overlay" id="mobileOverlay"></div>
 
-        <main class="main-content futuristic-main-content">
-            <header class="topbar futuristic-topbar">
+        <main class="main-content futuristic-main-content dark-main-content">
+            <header class="topbar futuristic-topbar dark-topbar">
                 <div class="topbar-left">
                     <button class="menu-toggle" id="menuToggle" aria-label="Abrir menu">☰</button>
+                    <div class="topbar-icon-badge" aria-hidden="true">
+                        <span>AI</span>
+                    </div>
                     <div>
-                        <span class="topbar-kicker">PERSONAL KNOWLEDGE COMMAND CENTER</span>
+                        <span class="topbar-kicker">DARK PERSONAL AI COMMAND CENTER</span>
                         <h1>Alexandre AI</h1>
                     </div>
                 </div>
 
                 <div class="topbar-right">
                     <div class="topbar-pill"><i></i> Ambiente privado</div>
-                    <div class="profile-chip futuristic-profile-chip">
+                    <div class="profile-chip futuristic-profile-chip dark-profile-chip">
                         <div class="profile-avatar">{{ user.name[:1]|upper }}</div>
                         <div>
                             <strong>{{ user.name }}</strong>
@@ -76,18 +81,18 @@
             </header>
 
             <section class="dashboard-grid futuristic-dashboard-grid" id="dashboard">
-                <section class="command-hero">
+                <section class="command-hero dark-command-hero">
                     <div class="command-hero-copy">
-                        <span class="eyebrow">PERSONAL KNOWLEDGE HUB</span>
+                        <span class="eyebrow">PRIVATE KNOWLEDGE HUB</span>
                         <h2>Sua IA aprende com seus arquivos.</h2>
-                        <p>Crie projetos, envie documentos e use o conteúdo deles como conhecimento privado nas conversas com o Alexandre AI.</p>
+                        <p>Crie projetos, envie documentos e use o conteúdo deles como conhecimento privado nas conversas com o Alexandre AI em um ambiente dark, moderno e responsivo.</p>
 
-                        <div class="hero-chip-row">
+                        <div class="hero-chip-row dark-hero-chip-row">
                             <span>◆ PDF</span>
                             <span>◆ Word</span>
                             <span>◆ Excel</span>
                             <span>◆ TXT / CSV / JSON</span>
-                            <span>◆ Busca inteligente por trechos</span>
+                            <span>◆ Busca inteligente</span>
                         </div>
 
                         <div class="hero-actions">
@@ -96,7 +101,7 @@
                         </div>
                     </div>
 
-                    <div class="command-hero-visual" aria-hidden="true">
+                    <div class="command-hero-visual dark-command-hero-visual" aria-hidden="true">
                         <div class="hero-orbit orbit-a"></div>
                         <div class="hero-orbit orbit-b"></div>
                         <div class="hero-orbit orbit-c"></div>
@@ -105,29 +110,30 @@
                         <div class="hero-node hn2"></div>
                         <div class="hero-node hn3"></div>
                         <div class="hero-node hn4"></div>
+                        <div class="hero-scanline"></div>
                     </div>
                 </section>
 
                 <section class="stat-grid futuristic-stat-grid">
-                    <article class="stat-card futuristic-stat-card">
+                    <article class="stat-card futuristic-stat-card dark-stat-card">
                         <div class="stat-icon">▣</div>
                         <div><strong id="projectCount">0</strong><span>Projetos</span></div>
                     </article>
-                    <article class="stat-card futuristic-stat-card">
+                    <article class="stat-card futuristic-stat-card dark-stat-card">
                         <div class="stat-icon">▤</div>
                         <div><strong id="documentCount">0</strong><span>Documentos</span></div>
                     </article>
-                    <article class="stat-card futuristic-stat-card">
+                    <article class="stat-card futuristic-stat-card dark-stat-card">
                         <div class="stat-icon">◈</div>
                         <div><strong id="chunkCount">0</strong><span>Trechos indexados</span></div>
                     </article>
-                    <article class="stat-card futuristic-stat-card">
+                    <article class="stat-card futuristic-stat-card dark-stat-card">
                         <div class="stat-icon">◎</div>
                         <div><strong id="historyCount">0</strong><span>Pesquisas</span></div>
                     </article>
                 </section>
 
-                <section class="agent-hub-card full-span" id="agent">
+                <section class="agent-hub-card full-span dark-panel-card" id="agent">
                     <div class="section-heading">
                         <div>
                             <span class="eyebrow">LIVE AI TERMINAL</span>
@@ -155,15 +161,15 @@
                         </div>
                     </div>
 
-                    <div class="chat-window futuristic-chat-window" id="chatWindow"></div>
+                    <div class="chat-window futuristic-chat-window dark-chat-window" id="chatWindow"></div>
 
-                    <form class="chat-composer futuristic-composer" id="chatForm">
+                    <form class="chat-composer futuristic-composer dark-composer" id="chatForm">
                         <input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
                         <textarea id="chatInput" rows="1" placeholder="Pergunte sobre seus documentos, projetos ou qualquer outro assunto..." aria-label="Mensagem para o agente"></textarea>
                         <button type="submit" aria-label="Enviar mensagem">➤</button>
                     </form>
 
-                    <div class="quick-actions futuristic-quick-actions">
+                    <div class="quick-actions futuristic-quick-actions dark-quick-actions">
                         <button type="button" data-prompt="Resuma os principais pontos dos documentos deste projeto.">Resumir documentos</button>
                         <button type="button" data-prompt="Quais riscos, pendências e pontos de atenção existem nos arquivos deste projeto?">Identificar riscos</button>
                         <button type="button" data-prompt="Crie um plano de ação usando as informações dos arquivos deste projeto.">Criar plano de ação</button>
@@ -171,7 +177,7 @@
                     </div>
                 </section>
 
-                <section class="workspace-panel full-span" id="projects">
+                <section class="workspace-panel full-span dark-panel-card" id="projects">
                     <div class="section-heading">
                         <div>
                             <span class="eyebrow">PERSONAL PROJECTS</span>
@@ -214,7 +220,7 @@
                     </div>
                 </section>
 
-                <section class="workspace-panel full-span" id="knowledge">
+                <section class="workspace-panel full-span dark-panel-card" id="knowledge">
                     <div class="section-heading">
                         <div>
                             <span class="eyebrow">PRIVATE KNOWLEDGE BASE</span>
@@ -259,7 +265,7 @@
                     </div>
                 </section>
 
-                <section class="workspace-panel full-span" id="history">
+                <section class="workspace-panel full-span dark-panel-card" id="history">
                     <div class="section-heading">
                         <div>
                             <span class="eyebrow">SEARCH HISTORY</span>
@@ -277,7 +283,7 @@
                     </div>
                 </section>
 
-                <section class="workspace-panel full-span" id="backup">
+                <section class="workspace-panel full-span dark-panel-card" id="backup">
                     <div class="section-heading">
                         <div>
                             <span class="eyebrow">LOCAL DATA CONTROL</span>
@@ -301,7 +307,7 @@
                 </section>
             </section>
 
-            <footer class="app-footer futuristic-footer">Alexandre AI · Private Knowledge Command Center</footer>
+            <footer class="app-footer futuristic-footer dark-footer">Alexandre AI · Dark Private Knowledge Command Center</footer>
         </main>
     </div>
 

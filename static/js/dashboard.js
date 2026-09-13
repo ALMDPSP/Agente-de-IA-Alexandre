@@ -935,3 +935,72 @@ renderSelectedFilesPreview();
 loadChat();
 renderHistory();
 loadAgentStatus();
+
+
+function startDashboardMatrixRain() {
+    const canvas = document.getElementById('matrixCanvasDashboard');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const chars = '01ABCDEFGHIJKLMNOPQRSTUVWXYZ#$%&@<>/[]{}*+-=0123456789';
+    let fontSize = 14;
+    let columns = 0;
+    let drops = [];
+    let animationFrame = null;
+
+    function resize() {
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.floor(window.innerWidth * dpr);
+        canvas.height = Math.floor(window.innerHeight * dpr);
+        canvas.style.width = `${window.innerWidth}px`;
+        canvas.style.height = `${window.innerHeight}px`;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        fontSize = window.innerWidth < 768 ? 11 : 14;
+        columns = Math.floor(window.innerWidth / fontSize);
+        drops = Array.from({ length: columns }, () => Math.random() * -120);
+    }
+
+    function draw() {
+        ctx.fillStyle = 'rgba(2, 6, 5, 0.075)';
+        ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+        ctx.font = `${fontSize}px monospace`;
+
+        for (let i = 0; i < drops.length; i += 1) {
+            const ch = chars.charAt(Math.floor(Math.random() * chars.length));
+            const x = i * fontSize;
+            const y = drops[i] * fontSize;
+            ctx.fillStyle = 'rgba(150,255,188,0.70)';
+            ctx.fillText(ch, x, y);
+            if (y > window.innerHeight && Math.random() > 0.982) drops[i] = Math.random() * -20;
+            drops[i] += 0.55;
+        }
+        animationFrame = window.requestAnimationFrame(draw);
+    }
+
+    resize();
+    draw();
+    window.addEventListener('resize', resize);
+    window.addEventListener('beforeunload', () => {
+        if (animationFrame) window.cancelAnimationFrame(animationFrame);
+    });
+}
+
+function initActiveSectionNav() {
+    const links = [...document.querySelectorAll('.nav-menu .nav-item[href^="#"]')];
+    const ids = links.map(link => link.getAttribute('href')).filter(Boolean);
+    const sections = ids.map(id => document.querySelector(id)).filter(Boolean);
+    if (!sections.length) return;
+
+    const observer = new IntersectionObserver(entries => {
+        const visible = entries
+            .filter(entry => entry.isIntersecting)
+            .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (!visible) return;
+        links.forEach(link => link.classList.toggle('active', link.getAttribute('href') === `#${visible.target.id}`));
+    }, { threshold: [0.2, 0.35, 0.6] });
+
+    sections.forEach(section => observer.observe(section));
+}
+
+startDashboardMatrixRain();
+initActiveSectionNav();
