@@ -154,3 +154,10 @@ gunicorn app:app
 - mesmo ícone usado no site e quando adicionado à tela inicial
 - navegação inferior específica para celular
 - scroll offsets ajustados para o header fixo
+
+
+## V12 — Ajuste de textos
+
+- removidas as frases anteriores sobre “entrada sombria”
+- nova comunicação padronizada em todas as telas: “Agente de IA próprio para Alexandre”
+- ajuste aplicado em Login, MFA, Setup MFA e Dashboard
