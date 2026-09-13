@@ -1004,3 +1004,33 @@ function initActiveSectionNav() {
 
 startDashboardMatrixRain();
 initActiveSectionNav();
+
+
+function initMobileBottomNav() {
+    const items = [...document.querySelectorAll('.mobile-nav-item')];
+    if (!items.length) return;
+
+    items.forEach(item => {
+        item.addEventListener('click', () => {
+            items.forEach(other => other.classList.remove('active'));
+            item.classList.add('active');
+        });
+    });
+
+    const sectionIds = ['dashboard', 'agent', 'projects', 'knowledge'];
+    const sections = sectionIds.map(id => document.getElementById(id)).filter(Boolean);
+    if (!sections.length) return;
+
+    const observer = new IntersectionObserver(entries => {
+        const visible = entries
+            .filter(entry => entry.isIntersecting)
+            .sort((a,b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (!visible) return;
+        const id = visible.target.id;
+        items.forEach(item => item.classList.toggle('active', item.getAttribute('href') === `#${id}`));
+    }, { rootMargin: '-25% 0px -55% 0px', threshold: [0, .1, .25] });
+
+    sections.forEach(section => observer.observe(section));
+}
+
+initMobileBottomNav();

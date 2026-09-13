@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#030806">
     <title>Alexandre AI | Central Pessoal</title>
+
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='icons/alexandre-ai.svg') }}">
+    <link rel="icon" type="image/png" sizes="64x64" href="{{ url_for('static', filename='icons/favicon-64.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Alexandre AI">
+    <meta name="mobile-web-app-capable" content="yes">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
 <body class="dashboard-body dashboard-dark-matrix-body">
@@ -18,7 +27,7 @@
         <aside class="sidebar futuristic-sidebar dark-sidebar" id="sidebar">
             <div class="sidebar-top">
                 <a class="brand" href="#dashboard">
-                    <span class="brand-mark">A</span>
+                    <span class="brand-mark brand-mark-image"><img src="{{ url_for('static', filename='icons/alexandre-ai.svg') }}" alt=""></span>
                     <span>Alexandre <strong>AI</strong></span>
                 </a>
                 <button class="sidebar-close" id="sidebarClose" aria-label="Fechar menu">×</button>
@@ -31,12 +40,12 @@
             </div>
 
             <nav class="nav-menu futuristic-nav dark-nav">
-                <a class="nav-item active" href="#dashboard"><span>⌂</span><span>Dashboard</span></a>
-                <a class="nav-item" href="#agent"><span>✦</span><span>Meu Agente IA</span></a>
-                <a class="nav-item" href="#projects"><span>▣</span><span>Projetos</span></a>
-                <a class="nav-item" href="#knowledge"><span>▤</span><span>Conhecimento</span></a>
-                <a class="nav-item" href="#history"><span>◎</span><span>Histórico</span></a>
-                <a class="nav-item" href="#backup"><span>⇩</span><span>Backup</span></a>
+                <a class="nav-item active" href="#dashboard"><span class="nav-icon">⌂</span><span class="nav-label">Dashboard</span></a>
+                <a class="nav-item" href="#agent"><span class="nav-icon">✦</span><span class="nav-label">Meu Agente IA</span></a>
+                <a class="nav-item" href="#projects"><span class="nav-icon">▣</span><span class="nav-label">Projetos</span></a>
+                <a class="nav-item" href="#knowledge"><span class="nav-icon">▤</span><span class="nav-label">Conhecimento</span></a>
+                <a class="nav-item" href="#history"><span class="nav-icon">◎</span><span class="nav-label">Histórico</span></a>
+                <a class="nav-item" href="#backup"><span class="nav-icon">⇩</span><span class="nav-label">Backup</span></a>
             </nav>
 
             <div class="sidebar-tech-card dark-sidebar-tech-card">
@@ -60,7 +69,7 @@
                 <div class="topbar-left">
                     <button class="menu-toggle" id="menuToggle" aria-label="Abrir menu">☰</button>
                     <div class="topbar-icon-badge" aria-hidden="true">
-                        <span>AI</span>
+                        <img src="{{ url_for('static', filename='icons/alexandre-ai.svg') }}" alt="">
                     </div>
                     <div>
                         <span class="topbar-kicker">DARK PERSONAL AI COMMAND CENTER</span>
@@ -310,6 +319,13 @@
             <footer class="app-footer futuristic-footer dark-footer">Alexandre AI · Dark Private Knowledge Command Center</footer>
         </main>
     </div>
+
+        <nav class="mobile-bottom-nav" aria-label="Navegação móvel">
+            <a href="#dashboard" class="mobile-nav-item active"><span>⌂</span><small>Início</small></a>
+            <a href="#agent" class="mobile-nav-item"><span>✦</span><small>IA</small></a>
+            <a href="#projects" class="mobile-nav-item"><span>▣</span><small>Projetos</small></a>
+            <a href="#knowledge" class="mobile-nav-item"><span>▤</span><small>Arquivos</small></a>
+        </nav>
 
     <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>

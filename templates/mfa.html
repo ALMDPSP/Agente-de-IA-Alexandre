@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#050b15">
     <title>Verificação MFA | Alexandre AI</title>
+
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='icons/alexandre-ai.svg') }}">
+    <link rel="icon" type="image/png" sizes="64x64" href="{{ url_for('static', filename='icons/favicon-64.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Alexandre AI">
+    <meta name="mobile-web-app-capable" content="yes">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
 <body class="auth-body auth-futuristic-body">
@@ -18,7 +27,7 @@
         <section class="auth-stage-panel auth-stage-panel-mfa">
             <div class="auth-brand-row">
                 <a class="brand brand-large" href="{{ url_for('login') }}">
-                    <span class="brand-mark">A</span>
+                    <span class="brand-mark brand-mark-image"><img src="{{ url_for('static', filename='icons/alexandre-ai.svg') }}" alt=""></span>
                     <span>Alexandre <strong>AI</strong></span>
                 </a>
                 <span class="system-online"><i></i> Security check</span>
@@ -63,7 +72,7 @@
             <div class="auth-card auth-card-v2 auth-card-mfa">
                 <div class="auth-card-header auth-card-header-v2">
                     <div class="mobile-brand brand">
-                        <span class="brand-mark">A</span>
+                        <span class="brand-mark brand-mark-image"><img src="{{ url_for('static', filename='icons/alexandre-ai.svg') }}" alt=""></span>
                         <span>Alexandre <strong>AI</strong></span>
                     </div>
 

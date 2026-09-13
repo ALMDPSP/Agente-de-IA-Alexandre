@@ -4856,3 +4856,298 @@ textarea:focus,
         border-radius: 22px;
     }
 }
+
+
+/* =========================================================
+   V11 — DASHBOARD FIXO + TABULAÇÃO + APP ICON + MOBILE
+   ========================================================= */
+
+.brand-mark-image {
+    overflow: hidden;
+    padding: 0;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+
+.brand-mark-image img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    border-radius: inherit;
+}
+
+/* Dashboard fixo: sidebar e topo permanecem visíveis; conteúdo rola abaixo. */
+.dark-sidebar {
+    position: fixed !important;
+    inset: 0 auto 0 0;
+    height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(141,255,183,.16) transparent;
+}
+
+.dark-topbar {
+    position: fixed !important;
+    top: 0;
+    left: 250px;
+    right: 0;
+    min-height: 86px;
+    padding: 12px 28px;
+    z-index: 16;
+}
+
+.dark-main-content {
+    margin-left: 250px;
+    padding-top: 108px !important;
+}
+
+.dashboard-grid {
+    scroll-margin-top: 106px;
+}
+
+#agent, #projects, #knowledge, #history, #backup {
+    scroll-margin-top: 110px;
+}
+
+/* Melhor tabulação/alinhamento da navegação. */
+.dark-nav {
+    display: grid;
+    gap: 7px;
+    margin-top: 6px;
+}
+
+.dark-nav .nav-item {
+    position: relative;
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr);
+    align-items: center;
+    min-height: 50px;
+    padding: 6px 12px 6px 9px;
+    border-radius: 14px;
+    text-align: left;
+}
+
+.dark-nav .nav-item::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 11px;
+    bottom: 11px;
+    width: 3px;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    transition: .2s ease;
+}
+
+.dark-nav .nav-item.active::before {
+    background: #8dffb7;
+    box-shadow: 0 0 14px rgba(141,255,183,.28);
+}
+
+.nav-icon {
+    width: 32px !important;
+    height: 32px;
+    display: grid !important;
+    place-items: center;
+    border: 1px solid rgba(104,164,124,.12);
+    border-radius: 10px;
+    color: #93b8a1;
+    background: rgba(141,255,183,.025);
+    font-size: 16px !important;
+    transition: .2s ease;
+}
+
+.dark-nav .nav-item.active .nav-icon,
+.dark-nav .nav-item:hover .nav-icon {
+    color: #04120b;
+    border-color: rgba(141,255,183,.22);
+    background: linear-gradient(135deg, #d9ffe7, #8dffb7);
+}
+
+.nav-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sidebar-panel,
+.sidebar-tech-card {
+    margin-left: 3px;
+    margin-right: 3px;
+}
+
+/* Ícone no topo e alinhamento profissional. */
+.topbar-icon-badge {
+    overflow: hidden;
+    padding: 0;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+
+.topbar-icon-badge img {
+    width: 52px;
+    height: 52px;
+    display: block;
+    border-radius: 16px;
+}
+
+.topbar-left > div:last-child {
+    display: grid;
+    align-content: center;
+    gap: 2px;
+}
+
+.topbar-left h1 {
+    line-height: 1.05;
+}
+
+/* Mobile bottom tabs. */
+.mobile-bottom-nav {
+    display: none;
+}
+
+@media (max-width: 850px) {
+    .dark-sidebar {
+        position: fixed !important;
+        left: -280px;
+        width: 270px;
+        z-index: 40;
+        transition: left .22s ease;
+    }
+
+    .dark-sidebar.open {
+        left: 0;
+    }
+
+    .dark-topbar {
+        left: 0;
+        min-height: 76px;
+        padding: 10px 14px;
+    }
+
+    .dark-main-content {
+        margin-left: 0 !important;
+        padding-top: 92px !important;
+        padding-left: 12px !important;
+        padding-right: 12px !important;
+        padding-bottom: 96px !important;
+    }
+
+    #dashboard, #agent, #projects, #knowledge, #history, #backup {
+        scroll-margin-top: 94px;
+    }
+
+    .topbar-icon-badge img {
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+    }
+
+    .mobile-overlay.show {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 35;
+        background: rgba(0,0,0,.62);
+        backdrop-filter: blur(2px);
+    }
+
+    .mobile-bottom-nav {
+        position: fixed;
+        left: 10px;
+        right: 10px;
+        bottom: max(10px, env(safe-area-inset-bottom));
+        z-index: 34;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        min-height: 64px;
+        padding: 6px;
+        border: 1px solid rgba(92,144,109,.18);
+        border-radius: 20px;
+        background: rgba(4,10,8,.90);
+        box-shadow: 0 14px 45px rgba(0,0,0,.44), inset 0 1px 0 rgba(180,255,210,.025);
+        backdrop-filter: blur(18px);
+    }
+
+    .mobile-nav-item {
+        display: grid;
+        place-items: center;
+        align-content: center;
+        gap: 3px;
+        min-width: 0;
+        border-radius: 14px;
+        color: #789584;
+        font-size: 18px;
+        transition: .18s ease;
+    }
+
+    .mobile-nav-item small {
+        font-size: 9px;
+        font-weight: 800;
+    }
+
+    .mobile-nav-item.active,
+    .mobile-nav-item:hover {
+        color: #baffce;
+        background: rgba(141,255,183,.06);
+    }
+
+    .profile-chip {
+        display: none;
+    }
+
+    .topbar-pill {
+        margin-left: auto;
+        width: auto !important;
+    }
+}
+
+@media (max-width: 560px) {
+    .topbar-kicker {
+        display: none;
+    }
+
+    .dark-topbar {
+        min-height: 68px;
+    }
+
+    .dark-main-content {
+        padding-top: 82px !important;
+    }
+
+    .topbar-left h1 {
+        font-size: 18px;
+    }
+
+    .topbar-icon-badge img {
+        width: 40px;
+        height: 40px;
+        border-radius: 13px;
+    }
+
+    .topbar-pill {
+        padding: 7px 9px;
+        font-size: 8px;
+    }
+
+    .command-hero-copy h2 {
+        font-size: 30px !important;
+    }
+
+    .dark-chat-window {
+        min-height: 270px;
+        max-height: 420px;
+    }
+
+    .mobile-bottom-nav {
+        left: 7px;
+        right: 7px;
+        min-height: 61px;
+        border-radius: 18px;
+    }
+}

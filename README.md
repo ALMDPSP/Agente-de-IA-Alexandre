@@ -140,3 +140,17 @@ gunicorn app:app
 - topo da página com ícone visual do Alexandre AI
 - melhorias de responsividade para celular
 - cards, menus e áreas internas no mesmo padrão cyber dark
+
+
+## V11 — Dashboard fixo + App Icon + Mobile
+
+- sidebar fixa no desktop
+- topbar fixa no desktop e celular
+- tabulação/alinhamento do menu lateral aprimorados
+- ícone Alexandre AI no topo
+- favicon na aba do navegador
+- apple-touch-icon para iPhone/iPad
+- manifest com ícones 192x192 e 512x512 para Android
+- mesmo ícone usado no site e quando adicionado à tela inicial
+- navegação inferior específica para celular
+- scroll offsets ajustados para o header fixo
