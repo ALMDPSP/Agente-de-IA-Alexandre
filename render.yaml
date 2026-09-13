@@ -19,7 +19,7 @@ services:
       - key: MFA_ENABLED
         value: "true"
       - key: MFA_SETUP_ENABLED
-        value: "true"
+        value: "false"
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_MODEL
@@ -34,3 +34,11 @@ services:
         sync: false
       - key: CLOUDFLARE_MODEL
         value: "@cf/google/gemma-4-26b-a4b-it"
+      - key: MS_CLIENT_ID
+        sync: false
+      - key: MS_CLIENT_SECRET
+        sync: false
+      - key: MS_TENANT
+        value: common
+      - key: MS_REDIRECT_URI
+        sync: false

@@ -1,85 +1,149 @@
-# Agente de IA Alexandre — V4 com MFA
+# Alexandre AI — V6 Central Pessoal
 
-Versão pessoal sem banco de dados, com login futurista, dupla autenticação TOTP e Agente IA com fallback.
+Esta versão transforma o projeto em uma central pessoal funcional, ainda sem banco de dados.
 
-## Fluxo de acesso
+## Recursos
+
+### Segurança
+- Login por e-mail e senha
+- MFA TOTP com Microsoft Authenticator / Google Authenticator
+- Sessão protegida
+- Limite de tentativas MFA
+
+### Agente IA
+- Groq → Gemini → Cloudflare
+- Histórico de conversa local
+- Projeto ativo enviado como contexto
+- Fontes do projeto usadas como conhecimento privado
+
+### Projetos pessoais
+- Criar
+- Editar
+- Excluir
+- Definir projeto ativo
+- Status do projeto
+- Fontes vinculadas ao projeto
+
+### Arquivos locais
+Formatos suportados:
+- PDF
+- DOCX
+- XLSX / XLSM
+- TXT
+- Markdown
+- CSV
+- JSON
+- XML
+- HTML
+- LOG
+
+O arquivo é processado em memória. O original não é persistido no Render.
+
+### Microsoft
+Integração OAuth com Microsoft Graph:
+- OneNote
+- OneDrive
+
+Permissões delegadas:
+- User.Read
+- Notes.Read
+- Files.Read
+
+### Histórico
+- Registro das perguntas feitas ao agente
+- Pesquisa no histórico
+- Reutilização da pergunta
+- Exclusão individual
+- Botão "Limpar histórico"
+
+### Backup
+- Exportar projetos, fontes e histórico em JSON
+- Restaurar backup em outro navegador/computador
+
+---
+
+# Importante: sem banco de dados
+
+Projetos, fontes importadas e histórico ficam no `localStorage` do navegador.
+
+O Render Free tem filesystem efêmero, portanto o aplicativo não tenta guardar uploads no disco do servidor.
+
+Use a função **Backup e restauração** para proteger seus dados locais.
+
+A autenticação Microsoft é armazenada em sessão do servidor. Se o serviço do Render reiniciar ou ficar inativo e for recriado, talvez seja necessário clicar novamente em **Conectar Microsoft**.
+
+---
+
+# Configurar Microsoft Graph
+
+Você precisa criar um App Registration na Microsoft.
+
+## 1. Criar o aplicativo
+
+Acesse o Microsoft Entra Admin Center / App registrations e crie um novo registro.
+
+Para conta pessoal Microsoft, escolha um tipo de conta que permita:
+- contas organizacionais
+- contas pessoais Microsoft
+
+## 2. Redirect URI
+
+Tipo: Web
+
+Use exatamente:
 
 ```text
-E-mail + senha
-      ↓
-MFA / Authenticator
-      ↓
-Dashboard
-      ↓
-Agente IA
+https://SEU-SERVICO.onrender.com/microsoft/callback
 ```
 
-Compatível com:
+Exemplo:
 
-- Microsoft Authenticator
-- Google Authenticator
-- Outros aplicativos TOTP compatíveis
+```text
+https://agente-ia-alexandre.onrender.com/microsoft/callback
+```
 
-## Variáveis do Render
+## 3. API permissions
 
-### Login
+Microsoft Graph — Delegated permissions:
+
+```text
+User.Read
+Notes.Read
+Files.Read
+```
+
+## 4. Client secret
+
+Crie um Client Secret e salve o **Value** imediatamente.
+
+Nunca coloque esse segredo no GitHub.
+
+## 5. Render → Environment
+
+Adicione:
+
+```text
+MS_CLIENT_ID=<Application (client) ID>
+MS_CLIENT_SECRET=<secret Value>
+MS_TENANT=common
+MS_REDIRECT_URI=https://SEU-SERVICO.onrender.com/microsoft/callback
+```
+
+Depois salve e faça novo deploy.
+
+---
+
+# Variáveis completas
 
 ```text
 SECRET_KEY
 ADMIN_NAME
 ADMIN_EMAIL
 ADMIN_PASSWORD
-```
 
-### MFA
+MFA_ENABLED
+MFA_SETUP_ENABLED
 
-```text
-MFA_ENABLED=true
-MFA_SETUP_ENABLED=true
-```
-
-`MFA_SETUP_ENABLED=true` deve ser usado somente durante o primeiro pareamento.
-
-## Primeiro pareamento do Authenticator
-
-1. Faça o deploy com:
-   - `MFA_ENABLED=true`
-   - `MFA_SETUP_ENABLED=true`
-2. Acesse o site.
-3. Digite e-mail e senha.
-4. Na tela MFA, clique em **Configurar QR Code**.
-5. Leia o QR Code com Microsoft Authenticator ou Google Authenticator.
-6. Digite o código de 6 dígitos.
-7. Confirme o acesso ao Dashboard.
-8. Volte ao Render e altere:
-
-```text
-MFA_SETUP_ENABLED=false
-```
-
-9. Salve e faça novo deploy.
-
-A partir daí o QR Code de configuração deixa de ficar disponível.
-
-## Atenção ao SECRET_KEY
-
-A chave TOTP é derivada de `SECRET_KEY`.
-
-**Não altere o `SECRET_KEY` depois de configurar o Authenticator.**
-
-Se alterar, será necessário ativar temporariamente `MFA_SETUP_ENABLED=true` e parear novamente o aplicativo.
-
-## IA
-
-Ordem de fallback:
-
-```text
-Groq → Gemini → Cloudflare
-```
-
-Variáveis:
-
-```text
 GROQ_API_KEY
 GROQ_MODEL
 
@@ -89,9 +153,16 @@ GEMINI_MODEL
 CLOUDFLARE_API_TOKEN
 CLOUDFLARE_ACCOUNT_ID
 CLOUDFLARE_MODEL
+
+MS_CLIENT_ID
+MS_CLIENT_SECRET
+MS_TENANT
+MS_REDIRECT_URI
 ```
 
-## Deploy
+---
+
+# Deploy Render
 
 Build:
 
@@ -104,21 +175,3 @@ Start:
 ```text
 gunicorn app:app
 ```
-
-## Segurança
-
-- Nunca envie `.env` para o GitHub.
-- Nunca coloque API Keys no JavaScript.
-- Após configurar MFA, desative `MFA_SETUP_ENABLED`.
-- O login MFA tem validade de 5 minutos para concluir a segunda etapa.
-- Após 5 códigos MFA incorretos, é necessário iniciar o login novamente.
-
-
-## Atualização V5
-
-- Dashboard redesenhado com visual futurista e profissional
-- Hero principal em estilo command center
-- Painéis de segurança, status do sistema e módulos
-- Área do Agente IA com visual modernizado
-- Botão para limpar histórico local da conversa
-- Layout alinhado visualmente com a nova tela de login

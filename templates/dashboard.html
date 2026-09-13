@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#050b15">
-    <title>Dashboard | Alexandre AI</title>
+    <title>Central Pessoal | Alexandre AI</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
 <body class="dashboard-body dashboard-futuristic-body">
@@ -15,7 +15,7 @@
     <div class="app-shell futuristic-app-shell">
         <aside class="sidebar futuristic-sidebar" id="sidebar">
             <div class="sidebar-top">
-                <a class="brand" href="{{ url_for('dashboard') }}">
+                <a class="brand" href="#dashboard">
                     <span class="brand-mark">A</span>
                     <span>Alexandre <strong>AI</strong></span>
                 </a>
@@ -25,26 +25,26 @@
             <div class="sidebar-panel">
                 <span class="sidebar-panel-label">NÚCLEO PESSOAL</span>
                 <strong>Central Inteligente</strong>
-                <small>Projetos, conhecimento, tarefas e IA em um único ambiente.</small>
+                <small>Projetos, arquivos, OneNote e IA em um único ambiente.</small>
             </div>
 
             <nav class="nav-menu futuristic-nav">
                 <a class="nav-item active" href="#dashboard"><span>⌂</span><span>Dashboard</span></a>
                 <a class="nav-item" href="#agent"><span>✦</span><span>Meu Agente IA</span></a>
-                <a class="nav-item" href="#modules"><span>▣</span><span>Módulos</span></a>
-                <a class="nav-item" href="#activities"><span>◎</span><span>Atividades</span></a>
-                <a class="nav-item" href="#roadmap"><span>◈</span><span>Evolução</span></a>
-                <a class="nav-item" href="#security"><span>◇</span><span>Segurança</span></a>
+                <a class="nav-item" href="#projects"><span>▣</span><span>Projetos</span></a>
+                <a class="nav-item" href="#files"><span>▤</span><span>Arquivos</span></a>
+                <a class="nav-item" href="#microsoft"><span>⊞</span><span>Microsoft</span></a>
+                <a class="nav-item" href="#history"><span>◎</span><span>Histórico</span></a>
+                <a class="nav-item" href="#backup"><span>⇩</span><span>Backup</span></a>
             </nav>
 
             <div class="sidebar-tech-card">
-                <span class="eyebrow">INFRA</span>
-                <strong>Render + IA Gateway</strong>
-                <small>Groq → Gemini → Cloudflare</small>
+                <span class="eyebrow">IA GATEWAY</span>
+                <strong id="sidebarAiChain">Verificando...</strong>
+                <small>Fallback automático entre provedores.</small>
             </div>
 
             <div class="sidebar-bottom">
-                <a class="nav-item" href="#settings"><span>⚙</span><span>Configurações</span></a>
                 <form action="{{ url_for('logout') }}" method="post">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button class="nav-item nav-button" type="submit"><span>↪</span><span>Sair</span></button>
@@ -59,7 +59,7 @@
                 <div class="topbar-left">
                     <button class="menu-toggle" id="menuToggle" aria-label="Abrir menu">☰</button>
                     <div>
-                        <span class="topbar-kicker">COMMAND CENTER</span>
+                        <span class="topbar-kicker">PERSONAL COMMAND CENTER</span>
                         <h1>Alexandre AI</h1>
                     </div>
                 </div>
@@ -80,21 +80,20 @@
                 <section class="command-hero">
                     <div class="command-hero-copy">
                         <span class="eyebrow">PERSONAL INTELLIGENCE HUB</span>
-                        <h2>Bem-vindo, {{ user.name }}.</h2>
-                        <p>Seu dashboard agora opera como um centro de comando pessoal, com design futurista, segurança avançada e acesso rápido ao seu agente de IA.</p>
+                        <h2>Seu ambiente está evoluindo.</h2>
+                        <p>Agora o Alexandre AI pode trabalhar com projetos pessoais, arquivos locais e conteúdo conectado à sua conta Microsoft.</p>
 
                         <div class="hero-chip-row">
-                            <span>◆ IA com fallback</span>
-                            <span>◆ Sessão segura</span>
-                            <span>◆ Histórico local</span>
-                            {% if mfa_enabled %}
-                            <span>◆ 2FA habilitado</span>
-                            {% endif %}
+                            <span>◆ Projetos locais</span>
+                            <span>◆ PDF / Word / Excel</span>
+                            <span>◆ OneNote</span>
+                            <span>◆ OneDrive</span>
+                            <span>◆ Histórico controlável</span>
                         </div>
 
                         <div class="hero-actions">
-                            <a href="#agent" class="hero-action primary-link-action">Abrir Agente IA</a>
-                            <a href="#modules" class="hero-action secondary-link-action">Ver módulos</a>
+                            <a href="#agent" class="hero-action primary-link-action">Conversar com a IA</a>
+                            <a href="#projects" class="hero-action secondary-link-action">Gerenciar projetos</a>
                         </div>
                     </div>
 
@@ -102,9 +101,7 @@
                         <div class="hero-orbit orbit-a"></div>
                         <div class="hero-orbit orbit-b"></div>
                         <div class="hero-orbit orbit-c"></div>
-                        <div class="hero-core">
-                            <span>AI</span>
-                        </div>
+                        <div class="hero-core"><span>AI</span></div>
                         <div class="hero-node hn1"></div>
                         <div class="hero-node hn2"></div>
                         <div class="hero-node hn3"></div>
@@ -115,23 +112,23 @@
                 <section class="stat-grid futuristic-stat-grid">
                     <article class="stat-card futuristic-stat-card">
                         <div class="stat-icon">▣</div>
-                        <div><strong>4</strong><span>Módulos iniciais</span></div>
+                        <div><strong id="projectCount">0</strong><span>Projetos</span></div>
                     </article>
                     <article class="stat-card futuristic-stat-card">
-                        <div class="stat-icon">✦</div>
-                        <div><strong>3</strong><span>Provedores de IA</span></div>
-                    </article>
-                    <article class="stat-card futuristic-stat-card">
-                        <div class="stat-icon">◇</div>
-                        <div><strong>{{ "2FA" if mfa_enabled else "1FA" }}</strong><span>Camada de acesso</span></div>
+                        <div class="stat-icon">▤</div>
+                        <div><strong id="sourceCount">0</strong><span>Fontes importadas</span></div>
                     </article>
                     <article class="stat-card futuristic-stat-card">
                         <div class="stat-icon">◎</div>
-                        <div><strong>100%</strong><span>Central pessoal</span></div>
+                        <div><strong id="historyCount">0</strong><span>Pesquisas</span></div>
+                    </article>
+                    <article class="stat-card futuristic-stat-card">
+                        <div class="stat-icon">⊞</div>
+                        <div><strong id="msStat">OFF</strong><span>Microsoft</span></div>
                     </article>
                 </section>
 
-                <section class="agent-hub-card" id="agent">
+                <section class="agent-hub-card full-span" id="agent">
                     <div class="section-heading">
                         <div>
                             <span class="eyebrow">LIVE AI TERMINAL</span>
@@ -139,162 +136,214 @@
                         </div>
                         <div class="agent-heading-tools">
                             <span class="status-pill" id="agentStatus"><i></i> Verificando IA...</span>
-                            <button type="button" class="ghost-action" id="clearChatBtn">Limpar conversa</button>
+                            <button type="button" class="ghost-action danger-ghost" id="clearChatBtn">Limpar conversa</button>
                         </div>
                     </div>
 
-                    <div class="chat-window futuristic-chat-window" id="chatWindow">
-                        <div class="message assistant-message">
-                            <div class="message-avatar">AI</div>
-                            <div class="message-bubble">
-                                Olá, {{ user.name }}. Seu centro de comando está pronto. Posso te ajudar com ideias, estudos, tarefas, documentação e melhorias do seu projeto.
-                            </div>
-                        </div>
+                    <div class="agent-project-bar">
+                        <label for="activeProjectSelect">Projeto ativo</label>
+                        <select id="activeProjectSelect">
+                            <option value="">Sem projeto — conversa geral</option>
+                        </select>
+                        <span id="contextStatus">Nenhum contexto de projeto será enviado.</span>
                     </div>
+
+                    <div class="chat-window futuristic-chat-window" id="chatWindow"></div>
 
                     <form class="chat-composer futuristic-composer" id="chatForm">
                         <input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
-                        <textarea id="chatInput" rows="1" placeholder="Digite sua mensagem para o Alexandre AI..." aria-label="Mensagem para o agente"></textarea>
+                        <textarea id="chatInput" rows="1" placeholder="Pergunte sobre seus projetos, arquivos ou qualquer outro assunto..." aria-label="Mensagem para o agente"></textarea>
                         <button type="submit" aria-label="Enviar mensagem">➤</button>
                     </form>
 
                     <div class="quick-actions futuristic-quick-actions">
-                        <button type="button" data-prompt="Quero ideias para melhorar meu site com agente de IA.">Ideias para o site</button>
-                        <button type="button" data-prompt="Crie um resumo profissional sobre meu projeto Alexandre AI.">Resumo do projeto</button>
-                        <button type="button" data-prompt="Quais próximos recursos posso adicionar ao meu dashboard?">Próximos recursos</button>
-                        <button type="button" data-prompt="Me ajude a planejar tarefas técnicas para a próxima versão.">Planejar tarefas</button>
+                        <button type="button" data-prompt="Resuma o projeto ativo e destaque os próximos passos.">Resumir projeto</button>
+                        <button type="button" data-prompt="Analise as fontes do projeto ativo e identifique riscos, pendências e oportunidades.">Analisar fontes</button>
+                        <button type="button" data-prompt="Organize um plano de ação com base no projeto ativo.">Criar plano de ação</button>
+                        <button type="button" data-prompt="Quais informações importantes existem nos arquivos deste projeto?">Ler arquivos</button>
                     </div>
                 </section>
 
-                <aside class="insight-stack">
-                    <section class="mini-panel security-panel" id="security">
-                        <div class="section-heading compact-heading">
-                            <div>
-                                <span class="eyebrow">SECURITY STATUS</span>
-                                <h2>Segurança</h2>
-                            </div>
-                        </div>
-
-                        <div class="security-matrix">
-                            <div class="matrix-item">
-                                <small>Autenticação</small>
-                                <strong>{{ "Dupla autenticação" if mfa_enabled else "Acesso por senha" }}</strong>
-                            </div>
-                            <div class="matrix-item">
-                                <small>Armazenamento</small>
-                                <strong>Local / sem banco</strong>
-                            </div>
-                            <div class="matrix-item">
-                                <small>Sessão</small>
-                                <strong>Protegida</strong>
-                            </div>
-                            <div class="matrix-item">
-                                <small>IA ativa</small>
-                                <strong id="providerChain">Verificando...</strong>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="mini-panel status-panel">
-                        <div class="section-heading compact-heading">
-                            <div>
-                                <span class="eyebrow">SYSTEM MODE</span>
-                                <h2>Modo atual</h2>
-                            </div>
-                        </div>
-
-                        <div class="mode-list">
-                            <div class="mode-item"><span>Ambiente</span><strong>Produção</strong></div>
-                            <div class="mode-item"><span>Engine</span><strong>Agente Pessoal</strong></div>
-                            <div class="mode-item"><span>Histórico</span><strong>Browser local</strong></div>
-                            <div class="mode-item"><span>MFA</span><strong id="mfaMode">{{ "Ativo" if mfa_enabled else "Desativado" }}</strong></div>
-                        </div>
-                    </section>
-                </aside>
-
-                <section class="modules-panel" id="modules">
+                <section class="workspace-panel full-span" id="projects">
                     <div class="section-heading">
                         <div>
-                            <span class="eyebrow">CORE MODULES</span>
-                            <h2>Módulos da central</h2>
+                            <span class="eyebrow">PERSONAL PROJECTS</span>
+                            <h2>Projetos pessoais</h2>
                         </div>
+                        <button type="button" class="primary-small-btn" id="newProjectBtn">+ Novo projeto</button>
                     </div>
 
-                    <div class="module-grid">
-                        <article class="module-card">
-                            <div class="module-icon">✦</div>
-                            <strong>Agente IA</strong>
-                            <p>Interação inteligente com histórico e fallback automático entre provedores.</p>
-                        </article>
-                        <article class="module-card">
-                            <div class="module-icon">▣</div>
-                            <strong>Projetos</strong>
-                            <p>Espaço preparado para centralizar ideias, iniciativas e evoluções do seu ambiente.</p>
-                        </article>
-                        <article class="module-card">
-                            <div class="module-icon">◎</div>
-                            <strong>Atividades</strong>
-                            <p>Bloco pronto para exibir eventos recentes, ações executadas e histórico de uso.</p>
-                        </article>
-                        <article class="module-card">
-                            <div class="module-icon">◇</div>
-                            <strong>Segurança</strong>
-                            <p>Login profissional com MFA por aplicativo autenticador e sessão protegida.</p>
-                        </article>
+                    <form class="project-form hidden-panel" id="projectForm">
+                        <input type="hidden" id="projectId">
+                        <div class="form-grid">
+                            <label>
+                                <span>Nome do projeto</span>
+                                <input id="projectName" type="text" maxlength="120" placeholder="Ex.: Alexandre AI" required>
+                            </label>
+                            <label>
+                                <span>Status</span>
+                                <select id="projectStatus">
+                                    <option value="Planejamento">Planejamento</option>
+                                    <option value="Em andamento">Em andamento</option>
+                                    <option value="Pausado">Pausado</option>
+                                    <option value="Concluído">Concluído</option>
+                                </select>
+                            </label>
+                        </div>
+                        <label>
+                            <span>Descrição / objetivo</span>
+                            <textarea id="projectDescription" rows="4" maxlength="4000" placeholder="Descreva o objetivo, contexto e informações importantes..."></textarea>
+                        </label>
+                        <div class="form-actions">
+                            <button type="submit" class="primary-small-btn">Salvar projeto</button>
+                            <button type="button" class="ghost-action" id="cancelProjectBtn">Cancelar</button>
+                        </div>
+                    </form>
+
+                    <div class="project-grid" id="projectGrid"></div>
+                    <div class="empty-workspace" id="projectEmpty">
+                        <strong>Nenhum projeto cadastrado</strong>
+                        <span>Crie seu primeiro projeto e adicione arquivos ou páginas do OneNote como fontes.</span>
                     </div>
                 </section>
 
-                <section class="activity-card futuristic-activity-card" id="activities">
+                <section class="workspace-panel" id="files">
                     <div class="section-heading">
                         <div>
-                            <span class="eyebrow">RECENT SIGNALS</span>
-                            <h2>Atividades recentes</h2>
+                            <span class="eyebrow">LOCAL FILE INTELLIGENCE</span>
+                            <h2>Arquivos do computador</h2>
                         </div>
                     </div>
 
-                    <div class="timeline-list">
-                        <div class="timeline-item">
-                            <span class="timeline-dot"></span>
-                            <div>
-                                <strong>Dashboard modernizado</strong>
-                                <small>Visual futurista alinhado à nova tela de login.</small>
-                            </div>
+                    <p class="panel-description">Importe o texto de PDF, Word, Excel, TXT, MD, CSV, JSON, XML ou HTML para um projeto. O arquivo original não fica salvo no Render.</p>
+
+                    <div class="source-import-form">
+                        <label>
+                            <span>Projeto de destino</span>
+                            <select id="fileProjectSelect"></select>
+                        </label>
+                        <label class="file-picker">
+                            <input id="localFileInput" type="file" accept=".pdf,.docx,.xlsx,.xlsm,.txt,.md,.csv,.json,.xml,.html,.htm,.log">
+                            <span>Selecionar arquivo</span>
+                        </label>
+                        <button type="button" class="primary-small-btn" id="importLocalFileBtn">Importar conteúdo</button>
+                    </div>
+
+                    <div class="import-feedback" id="fileImportStatus">Selecione um projeto e um arquivo.</div>
+                </section>
+
+                <section class="workspace-panel" id="microsoft">
+                    <div class="section-heading">
+                        <div>
+                            <span class="eyebrow">MICROSOFT GRAPH</span>
+                            <h2>OneNote e OneDrive</h2>
                         </div>
-                        <div class="timeline-item">
-                            <span class="timeline-dot"></span>
-                            <div>
-                                <strong>Agente IA conectado</strong>
-                                <small>Estrutura pronta para Groq, Gemini e Cloudflare.</small>
-                            </div>
+                        <div class="ms-actions">
+                            <a class="primary-small-btn" id="msConnectBtn" href="{{ url_for('microsoft_connect') }}">Conectar Microsoft</a>
+                            <button type="button" class="ghost-action hidden-panel" id="msDisconnectBtn">Desconectar</button>
                         </div>
-                        <div class="timeline-item">
-                            <span class="timeline-dot"></span>
-                            <div>
-                                <strong>Segurança reforçada</strong>
-                                <small>MFA por Authenticator integrado ao fluxo de acesso.</small>
-                            </div>
+                    </div>
+
+                    <div class="microsoft-status-card">
+                        <div class="integration-logo">⊞</div>
+                        <div>
+                            <strong id="msStatusTitle">Verificando integração...</strong>
+                            <span id="msStatusDetail">
+                                {% if microsoft_configured %}
+                                O site está preparado para autenticação Microsoft.
+                                {% else %}
+                                Configure MS_CLIENT_ID e MS_CLIENT_SECRET no Render.
+                                {% endif %}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="integration-tabs">
+                        <button class="integration-tab active" type="button" data-integration-tab="onenote">OneNote</button>
+                        <button class="integration-tab" type="button" data-integration-tab="onedrive">OneDrive</button>
+                    </div>
+
+                    <div class="integration-content" id="onenotePanel">
+                        <div class="integration-toolbar">
+                            <select id="onenoteProjectSelect"></select>
+                            <button type="button" class="ghost-action" id="loadOneNoteBtn">Atualizar páginas</button>
+                        </div>
+                        <div class="resource-list" id="onenoteList"></div>
+                        <div class="empty-workspace compact-empty" id="onenoteEmpty">
+                            <span>Conecte sua conta Microsoft para listar as páginas do OneNote.</span>
+                        </div>
+                    </div>
+
+                    <div class="integration-content hidden-panel" id="onedrivePanel">
+                        <div class="integration-toolbar">
+                            <select id="onedriveProjectSelect"></select>
+                            <button type="button" class="ghost-action" id="onedriveRootBtn">Raiz</button>
+                            <button type="button" class="ghost-action" id="loadOneDriveBtn">Atualizar</button>
+                        </div>
+                        <div class="onedrive-path" id="onedrivePath">OneDrive /</div>
+                        <div class="resource-list" id="onedriveList"></div>
+                        <div class="empty-workspace compact-empty" id="onedriveEmpty">
+                            <span>Conecte sua conta Microsoft para navegar pelo OneDrive.</span>
                         </div>
                     </div>
                 </section>
 
-                <section class="roadmap-card futuristic-roadmap-card" id="roadmap">
+                <section class="workspace-panel full-span" id="sources">
                     <div class="section-heading">
                         <div>
-                            <span class="eyebrow">NEXT EVOLUTION</span>
-                            <h2>Próximas evoluções</h2>
+                            <span class="eyebrow">KNOWLEDGE SOURCES</span>
+                            <h2>Fontes dos projetos</h2>
+                        </div>
+                        <select id="sourceProjectFilter"></select>
+                    </div>
+
+                    <div class="source-grid" id="sourceGrid"></div>
+                    <div class="empty-workspace" id="sourceEmpty">
+                        <span>As páginas do OneNote e os arquivos importados aparecerão aqui.</span>
+                    </div>
+                </section>
+
+                <section class="workspace-panel full-span" id="history">
+                    <div class="section-heading">
+                        <div>
+                            <span class="eyebrow">SEARCH HISTORY</span>
+                            <h2>Histórico de pesquisas</h2>
+                        </div>
+                        <div class="history-actions">
+                            <input id="historySearch" class="compact-search" type="search" placeholder="Pesquisar no histórico...">
+                            <button type="button" class="ghost-action danger-ghost" id="clearHistoryBtn">Limpar histórico</button>
                         </div>
                     </div>
-                    <div class="roadmap-list futuristic-roadmap-list">
-                        <div class="roadmap-item done"><span>1</span><div><strong>Login futurista</strong><small>Concluído com MFA</small></div></div>
-                        <div class="roadmap-item done"><span>2</span><div><strong>Dashboard futurista</strong><small>Concluído</small></div></div>
-                        <div class="roadmap-item"><span>3</span><div><strong>Módulo de projetos</strong><small>Cadastros e organização pessoal</small></div></div>
-                        <div class="roadmap-item"><span>4</span><div><strong>Notas e tarefas</strong><small>Planejamento produtivo</small></div></div>
-                        <div class="roadmap-item"><span>5</span><div><strong>Ferramentas do agente</strong><small>Ações reais no seu site</small></div></div>
+
+                    <div class="history-list" id="historyList"></div>
+                    <div class="empty-workspace" id="historyEmpty">
+                        <span>Suas perguntas ao Agente IA aparecerão aqui.</span>
                     </div>
+                </section>
+
+                <section class="workspace-panel full-span" id="backup">
+                    <div class="section-heading">
+                        <div>
+                            <span class="eyebrow">LOCAL DATA CONTROL</span>
+                            <h2>Backup e restauração</h2>
+                        </div>
+                    </div>
+
+                    <p class="panel-description">Como este projeto não usa banco de dados, projetos, fontes importadas e histórico ficam neste navegador. Gere um backup JSON para levar seus dados para outro computador ou navegador.</p>
+
+                    <div class="backup-actions">
+                        <button type="button" class="primary-small-btn" id="exportBackupBtn">Exportar backup</button>
+                        <label class="file-picker backup-picker">
+                            <input id="importBackupInput" type="file" accept=".json,application/json">
+                            <span>Importar backup</span>
+                        </label>
+                    </div>
+
+                    <div class="import-feedback" id="backupStatus">Nenhum backup executado nesta sessão.</div>
                 </section>
             </section>
 
-            <footer class="app-footer futuristic-footer">Alexandre AI · Command Center · Secure Intelligence Workspace</footer>
+            <footer class="app-footer futuristic-footer">Alexandre AI · Personal Command Center · Secure Intelligence Workspace</footer>
         </main>
     </div>
 
