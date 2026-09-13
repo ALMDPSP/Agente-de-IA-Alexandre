@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#08111f">
+    <title>Dashboard | Alexandre AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body class="dashboard-body">
+    <div class="app-shell">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-top">
+                <a class="brand" href="{{ url_for('dashboard') }}">
+                    <span class="brand-mark">A</span>
+                    <span>Alexandre <strong>AI</strong></span>
+                </a>
+                <button class="sidebar-close" id="sidebarClose" aria-label="Fechar menu">×</button>
+            </div>
+
+            <nav class="nav-menu">
+                <a class="nav-item active" href="#dashboard"><span>⌂</span><span>Dashboard</span></a>
+                <a class="nav-item" href="#agent"><span>✦</span><span>Meu Agente IA</span></a>
+                <a class="nav-item" href="#projects"><span>▣</span><span>Projetos</span></a>
+                <a class="nav-item" href="#documents"><span>▤</span><span>Documentos</span></a>
+                <a class="nav-item" href="#notes"><span>✎</span><span>Anotações</span></a>
+                <a class="nav-item" href="#tasks"><span>✓</span><span>Tarefas</span></a>
+                <a class="nav-item" href="#memory"><span>◈</span><span>Conhecimento</span></a>
+            </nav>
+
+            <div class="sidebar-bottom">
+                <a class="nav-item" href="#settings"><span>⚙</span><span>Configurações</span></a>
+                <form action="{{ url_for('logout') }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="nav-item nav-button" type="submit"><span>↪</span><span>Sair</span></button>
+                </form>
+            </div>
+        </aside>
+
+        <div class="mobile-overlay" id="mobileOverlay"></div>
+
+        <main class="main-content">
+            <header class="topbar">
+                <div class="topbar-left">
+                    <button class="menu-toggle" id="menuToggle" aria-label="Abrir menu">☰</button>
+                    <div>
+                        <span class="topbar-kicker">CENTRAL PESSOAL</span>
+                        <h1>Dashboard</h1>
+                    </div>
+                </div>
+
+                <div class="profile-chip">
+                    <div class="profile-avatar">{{ user.name[:1]|upper }}</div>
+                    <div>
+                        <strong>{{ user.name }}</strong>
+                        <small>Administrador</small>
+                    </div>
+                </div>
+            </header>
+
+            <section class="dashboard-grid" id="dashboard">
+                <div class="welcome-card">
+                    <div>
+                        <span class="eyebrow">ALEXANDRE AI</span>
+                        <h2>Olá, {{ user.name }}.</h2>
+                        <p>Seu espaço pessoal está pronto. Use a IA para transformar ideias, organizar projetos e acelerar suas tarefas.</p>
+                    </div>
+                    <div class="welcome-glow">✦</div>
+                </div>
+
+                <div class="stat-grid">
+                    <article class="stat-card">
+                        <div class="stat-icon">▣</div>
+                        <div><strong>0</strong><span>Projetos</span></div>
+                    </article>
+                    <article class="stat-card">
+                        <div class="stat-icon">✓</div>
+                        <div><strong>0</strong><span>Tarefas</span></div>
+                    </article>
+                    <article class="stat-card">
+                        <div class="stat-icon">▤</div>
+                        <div><strong>0</strong><span>Documentos</span></div>
+                    </article>
+                    <article class="stat-card">
+                        <div class="stat-icon">◈</div>
+                        <div><strong>0</strong><span>Memórias</span></div>
+                    </article>
+                </div>
+
+                <section class="agent-card" id="agent">
+                    <div class="section-heading">
+                        <div>
+                            <span class="eyebrow">ASSISTENTE PESSOAL</span>
+                            <h2>Meu Agente IA</h2>
+                        </div>
+                        <span class="status-pill"><i></i> Interface ativa</span>
+                    </div>
+
+                    <div class="chat-window" id="chatWindow">
+                        <div class="message assistant-message">
+                            <div class="message-avatar">AI</div>
+                            <div class="message-bubble">
+                                Olá, {{ user.name }}. Sua central está pronta. Na próxima etapa vamos conectar meu motor de IA e minhas ferramentas.
+                            </div>
+                        </div>
+                    </div>
+
+                    <form class="chat-composer" id="chatForm">
+                        <input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
+                        <textarea id="chatInput" rows="1" placeholder="Pergunte qualquer coisa..." aria-label="Mensagem para o agente"></textarea>
+                        <button type="submit" aria-label="Enviar mensagem">➤</button>
+                    </form>
+
+                    <div class="quick-actions">
+                        <button type="button" data-prompt="Quais são minhas tarefas de hoje?">Tarefas de hoje</button>
+                        <button type="button" data-prompt="Mostre meus projetos atuais.">Meus projetos</button>
+                        <button type="button" data-prompt="Quero registrar uma nova ideia.">Registrar ideia</button>
+                    </div>
+                </section>
+
+                <section class="activity-card">
+                    <div class="section-heading">
+                        <div>
+                            <span class="eyebrow">HISTÓRICO</span>
+                            <h2>Atividades recentes</h2>
+                        </div>
+                    </div>
+
+                    <div class="empty-state">
+                        <span>◎</span>
+                        <strong>Nenhuma atividade ainda</strong>
+                        <p>Conforme você usar o site, suas atividades aparecerão aqui.</p>
+                    </div>
+                </section>
+
+                <section class="roadmap-card">
+                    <div class="section-heading">
+                        <div>
+                            <span class="eyebrow">PRÓXIMAS ETAPAS</span>
+                            <h2>Evolução do seu agente</h2>
+                        </div>
+                    </div>
+                    <div class="roadmap-list">
+                        <div class="roadmap-item done"><span>1</span><div><strong>Interface</strong><small>Login e Dashboard</small></div></div>
+                        <div class="roadmap-item"><span>2</span><div><strong>IA</strong><small>Groq → Gemini → Cloudflare</small></div></div>
+                        <div class="roadmap-item"><span>3</span><div><strong>Ferramentas</strong><small>Projetos, tarefas e documentos</small></div></div>
+                        <div class="roadmap-item"><span>4</span><div><strong>Memória</strong><small>Conhecimento pessoal controlado</small></div></div>
+                    </div>
+                </section>
+            </section>
+
+            <footer class="app-footer">Alexandre AI · Central Pessoal</footer>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
