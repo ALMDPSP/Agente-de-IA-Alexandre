@@ -3,4 +3,6 @@ Flask-Login>=0.6.3,<1
 Flask-WTF>=1.2,<2
 gunicorn>=23,<24
 openai>=1.0,<3
+pyotp>=2.9,<3
+qrcode[pil]>=8,<9
 python-dotenv>=1.0,<2

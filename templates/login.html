@@ -3,91 +3,141 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#08111f">
-    <title>Login | Alexandre AI</title>
+    <meta name="theme-color" content="#050b15">
+    <title>Acesso Seguro | Alexandre AI</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
-<body class="login-body">
-    <main class="login-shell">
-        <section class="login-hero">
-            <div class="brand brand-large">
-                <span class="brand-mark">A</span>
-                <span>Alexandre <strong>AI</strong></span>
-            </div>
+<body class="auth-body">
+    <div class="auth-grid-bg" aria-hidden="true"></div>
+    <div class="auth-aurora auth-aurora-a" aria-hidden="true"></div>
+    <div class="auth-aurora auth-aurora-b" aria-hidden="true"></div>
 
-            <div class="hero-copy">
-                <span class="eyebrow">INTELIGÊNCIA PESSOAL</span>
-                <h1>Seu espaço.<br>Seus projetos.<br><span>Sua IA.</span></h1>
-                <p>Uma central pessoal para organizar projetos, documentos, tarefas e conhecimento com inteligência artificial.</p>
-            </div>
-
-            <div class="ai-orbit" aria-hidden="true">
-                <div class="orbit orbit-1"></div>
-                <div class="orbit orbit-2"></div>
-                <div class="orbit orbit-3"></div>
-                <div class="ai-core">
-                    <span>AI</span>
-                </div>
-                <span class="particle p1"></span>
-                <span class="particle p2"></span>
-                <span class="particle p3"></span>
-                <span class="particle p4"></span>
-            </div>
-
-            <div class="hero-foot">Projetado para evoluir junto com você.</div>
-        </section>
-
-        <section class="login-panel">
-            <div class="login-card">
-                <div class="mobile-brand brand">
+    <main class="auth-shell">
+        <section class="auth-visual-panel">
+            <div class="auth-brand-row">
+                <a class="brand brand-large" href="{{ url_for('login') }}">
                     <span class="brand-mark">A</span>
                     <span>Alexandre <strong>AI</strong></span>
+                </a>
+                <span class="system-online"><i></i> Sistema online</span>
+            </div>
+
+            <div class="auth-hero">
+                <span class="eyebrow">PERSONAL INTELLIGENCE SYSTEM</span>
+                <h1>Sua central digital,<br><span>protegida por duas camadas.</span></h1>
+                <p>Projetos, conhecimento e inteligência artificial em um ambiente pessoal com autenticação segura.</p>
+
+                <div class="security-pills">
+                    <span>◆ Sessão protegida</span>
+                    <span>◆ MFA / TOTP</span>
+                    <span>◆ IA com fallback</span>
+                </div>
+            </div>
+
+            <div class="neural-stage" aria-hidden="true">
+                <div class="scanner-line"></div>
+                <div class="neural-ring neural-ring-1"></div>
+                <div class="neural-ring neural-ring-2"></div>
+                <div class="neural-ring neural-ring-3"></div>
+                <div class="neural-core">
+                    <div class="core-inner">AI</div>
+                </div>
+                <span class="node n1"></span>
+                <span class="node n2"></span>
+                <span class="node n3"></span>
+                <span class="node n4"></span>
+                <span class="node n5"></span>
+                <span class="node n6"></span>
+            </div>
+
+            <div class="auth-system-footer">
+                <div>
+                    <small>SECURITY LAYER</small>
+                    <strong>{{ "2FA ATIVO" if mfa_enabled else "ACESSO PADRÃO" }}</strong>
+                </div>
+                <div>
+                    <small>AI GATEWAY</small>
+                    <strong>READY</strong>
+                </div>
+                <div>
+                    <small>ENVIRONMENT</small>
+                    <strong>PRIVATE</strong>
+                </div>
+            </div>
+        </section>
+
+        <section class="auth-form-panel">
+            <div class="auth-card">
+                <div class="auth-card-header">
+                    <div class="mobile-brand brand">
+                        <span class="brand-mark">A</span>
+                        <span>Alexandre <strong>AI</strong></span>
+                    </div>
+
+                    <div class="auth-icon-lock">◇</div>
+                    <span class="eyebrow">ACESSO SEGURO</span>
+                    <h2>Identifique-se</h2>
+                    <p>Informe suas credenciais para iniciar a autenticação.</p>
                 </div>
 
-                <span class="eyebrow">BEM-VINDO</span>
-                <h2>Acesse sua central</h2>
-                <p class="muted">Entre para continuar para o seu ambiente pessoal.</p>
-
                 {% if error %}
-                    <div class="alert">{{ error }}</div>
+                    <div class="alert auth-alert">{{ error }}</div>
                 {% endif %}
 
-                <form method="post" class="login-form">
+                <form method="post" class="login-form auth-login-form" autocomplete="on">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                     <label for="email">E-mail</label>
-                    <div class="input-wrap">
-                        <span class="input-icon">✉</span>
-                        <input id="email" name="email" type="email" autocomplete="email" placeholder="seu@email.com" required>
+                    <div class="input-wrap futuristic-input">
+                        <span class="input-icon">◎</span>
+                        <input id="email" name="email" type="email" autocomplete="email"
+                               placeholder="seu@email.com" required autofocus>
                     </div>
 
                     <label for="password">Senha</label>
-                    <div class="input-wrap">
+                    <div class="input-wrap futuristic-input">
                         <span class="input-icon">⌁</span>
-                        <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Digite sua senha" required>
-                        <button class="password-toggle" type="button" data-password-toggle aria-label="Mostrar senha">◉</button>
+                        <input id="password" name="password" type="password"
+                               autocomplete="current-password" placeholder="Digite sua senha" required>
+                        <button class="password-toggle" type="button" data-password-toggle
+                                aria-label="Mostrar senha">◉</button>
                     </div>
 
-                    <div class="form-row">
+                    <div class="form-row auth-options">
                         <label class="checkbox">
                             <input type="checkbox" name="remember">
-                            <span>Lembrar acesso</span>
+                            <span>Manter conectado</span>
                         </label>
-                        <span class="link-muted">Recuperar senha em breve</span>
+                        {% if mfa_enabled %}
+                            <span class="mfa-mini-badge">2FA habilitado</span>
+                        {% endif %}
                     </div>
 
-                    <button class="primary-btn" type="submit">
-                        Entrar
-                        <span>→</span>
+                    <button class="primary-btn futuristic-btn" type="submit">
+                        <span>Acessar ambiente</span>
+                        <b>→</b>
                     </button>
                 </form>
 
-                <div class="security-note">
-                    <span>◆</span>
+                <div class="auth-divider"><span>SEGURANÇA</span></div>
+
+                <div class="security-note auth-security-note">
+                    <span class="shield-symbol">◇</span>
                     <div>
-                        <strong>Acesso protegido</strong>
-                        <small>Autenticação, sessão segura e banco PostgreSQL.</small>
+                        <strong>{{ "Dupla autenticação ativa" if mfa_enabled else "Acesso protegido" }}</strong>
+                        <small>
+                            {% if mfa_enabled %}
+                                Após a senha, será solicitado o código do seu aplicativo autenticador.
+                            {% else %}
+                                Ative MFA no Render para adicionar a segunda etapa de autenticação.
+                            {% endif %}
+                        </small>
                     </div>
+                </div>
+
+                <div class="auth-card-footer">
+                    <span>Alexandre AI</span>
+                    <span>Secure Access Gateway</span>
                 </div>
             </div>
         </section>

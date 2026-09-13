@@ -1,10 +1,16 @@
+import base64
+import hashlib
 import hmac
+import io
 import logging
 import os
+import time
 from datetime import timedelta
 
+import pyotp
+import qrcode
 from dotenv import load_dotenv
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_wtf.csrf import CSRFProtect
 from openai import OpenAI
@@ -41,6 +47,9 @@ Nunca invente que executou uma ação que o sistema ainda não possui.
 Quando não tiver certeza de uma informação, deixe isso explícito.
 """
 
+PREAUTH_TTL_SECONDS = 300
+MAX_MFA_ATTEMPTS = 5
+
 
 class EnvUser(UserMixin):
     def __init__(self):
@@ -61,12 +70,109 @@ def load_user(user_id):
     return None
 
 
+def env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on", "sim"}
+
+
+def mfa_enabled():
+    return env_bool("MFA_ENABLED", False)
+
+
+def mfa_setup_enabled():
+    return env_bool("MFA_SETUP_ENABLED", False)
+
+
+def mfa_secret():
+    """
+    Deriva uma chave TOTP Base32 a partir do SECRET_KEY.
+    Isso evita armazenar um segundo segredo TOTP em banco.
+    Se SECRET_KEY for alterado, o Authenticator precisará ser pareado novamente.
+    """
+    source = app.config["SECRET_KEY"]
+    digest = hmac.new(
+        str(source).encode("utf-8"),
+        b"alexandre-ai-mfa-v1",
+        hashlib.sha256,
+    ).digest()
+    return base64.b32encode(digest).decode("ascii").rstrip("=")
+
+
+def mfa_totp():
+    return pyotp.TOTP(mfa_secret(), digits=6, interval=30)
+
+
+def mfa_uri():
+    user = get_admin_user()
+    account_name = user.email or "Alexandre"
+    return mfa_totp().provisioning_uri(
+        name=account_name,
+        issuer_name="Alexandre AI",
+    )
+
+
+def qr_data_uri(text):
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=8,
+        border=2,
+    )
+    qr.add_data(text)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="black", back_color="white")
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+def start_preauth(remember):
+    session["preauth"] = True
+    session["preauth_at"] = int(time.time())
+    session["remember_after_mfa"] = bool(remember)
+    session["mfa_attempts"] = 0
+
+
+def clear_preauth():
+    for key in (
+        "preauth",
+        "preauth_at",
+        "remember_after_mfa",
+        "mfa_attempts",
+    ):
+        session.pop(key, None)
+
+
+def preauth_valid():
+    if not session.get("preauth"):
+        return False
+
+    started = session.get("preauth_at", 0)
+    try:
+        age = time.time() - float(started)
+    except (TypeError, ValueError):
+        return False
+
+    return 0 <= age <= PREAUTH_TTL_SECONDS
+
+
+def finish_login():
+    remember = bool(session.get("remember_after_mfa"))
+    login_user(get_admin_user(), remember=remember)
+    clear_preauth()
+
+
 @app.after_request
 def set_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 
@@ -96,35 +202,126 @@ def login():
         password_ok = bool(admin_password) and hmac.compare_digest(password, admin_password)
 
         if email_ok and password_ok:
+            if mfa_enabled():
+                start_preauth(remember)
+                return redirect(url_for("mfa_challenge"))
+
             login_user(get_admin_user(), remember=remember)
             return redirect(url_for("dashboard"))
 
         error = "E-mail ou senha inválidos."
 
-    return render_template("login.html", error=error)
+    return render_template(
+        "login.html",
+        error=error,
+        mfa_enabled=mfa_enabled(),
+    )
+
+
+@app.route("/mfa", methods=["GET", "POST"])
+def mfa_challenge():
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+
+    if not mfa_enabled():
+        return redirect(url_for("login"))
+
+    if not preauth_valid():
+        clear_preauth()
+        return redirect(url_for("login"))
+
+    error = None
+
+    if request.method == "POST":
+        attempts = int(session.get("mfa_attempts", 0))
+        if attempts >= MAX_MFA_ATTEMPTS:
+            clear_preauth()
+            return redirect(url_for("login"))
+
+        code = "".join(ch for ch in request.form.get("code", "") if ch.isdigit())
+
+        if len(code) == 6 and mfa_totp().verify(code, valid_window=1):
+            finish_login()
+            return redirect(url_for("dashboard"))
+
+        attempts += 1
+        session["mfa_attempts"] = attempts
+
+        if attempts >= MAX_MFA_ATTEMPTS:
+            clear_preauth()
+            return render_template(
+                "mfa.html",
+                error="Limite de tentativas atingido. Faça o login novamente.",
+                setup_enabled=False,
+                locked=True,
+            )
+
+        error = f"Código inválido. Restam {MAX_MFA_ATTEMPTS - attempts} tentativa(s)."
+
+    return render_template(
+        "mfa.html",
+        error=error,
+        setup_enabled=mfa_setup_enabled(),
+        locked=False,
+    )
+
+
+@app.route("/mfa/setup", methods=["GET", "POST"])
+def mfa_setup():
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+
+    if not mfa_enabled() or not mfa_setup_enabled():
+        return redirect(url_for("mfa_challenge"))
+
+    if not preauth_valid():
+        clear_preauth()
+        return redirect(url_for("login"))
+
+    error = None
+
+    if request.method == "POST":
+        code = "".join(ch for ch in request.form.get("code", "") if ch.isdigit())
+
+        if len(code) == 6 and mfa_totp().verify(code, valid_window=1):
+            finish_login()
+            return redirect(url_for("dashboard"))
+
+        error = "Código inválido. Confira o relógio do celular e tente novamente."
+
+    return render_template(
+        "mfa_setup.html",
+        error=error,
+        qr_data=qr_data_uri(mfa_uri()),
+        manual_key=mfa_secret(),
+        account_email=get_admin_user().email,
+    )
 
 
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    return render_template("dashboard.html", user=current_user)
+    return render_template(
+        "dashboard.html",
+        user=current_user,
+        mfa_enabled=mfa_enabled(),
+    )
 
 
 @app.route("/logout", methods=["POST"])
 @login_required
 def logout():
     logout_user()
+    clear_preauth()
     return redirect(url_for("login"))
 
 
 def sanitize_history(raw_history):
-    """Mantém apenas mensagens simples e limita o contexto enviado às APIs."""
     clean = []
 
     if not isinstance(raw_history, list):
         return clean
 
-    # Últimas 16 mensagens para evitar contexto excessivo.
     for item in raw_history[-16:]:
         if not isinstance(item, dict):
             continue
@@ -146,7 +343,6 @@ def sanitize_history(raw_history):
         if not content:
             continue
 
-        # Limite defensivo por mensagem.
         clean.append({
             "role": normalized_role,
             "content": content[:12000]
@@ -241,7 +437,6 @@ def ask_with_fallback(messages):
             }
 
         except Exception as exc:
-            # Não devolvemos o erro completo ao navegador para não expor detalhes.
             logger.warning(
                 "Falha no provedor %s: %s",
                 provider["name"],
@@ -266,6 +461,7 @@ def agent_status():
     return jsonify({
         "configured": configured,
         "fallback_order": [p["provider"] for p in configured],
+        "mfa": mfa_enabled(),
     })
 
 
@@ -283,7 +479,6 @@ def agent():
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.extend(history)
 
-    # Evita duplicar a mensagem caso o frontend já a tenha colocado no histórico.
     if not history or history[-1].get("role") != "user" or history[-1].get("content") != message:
         messages.append({"role": "user", "content": message})
 

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#050b15">
+    <title>Configurar MFA | Alexandre AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body class="auth-body">
+    <div class="auth-grid-bg" aria-hidden="true"></div>
+    <div class="auth-aurora auth-aurora-a" aria-hidden="true"></div>
+    <div class="auth-aurora auth-aurora-b" aria-hidden="true"></div>
+
+    <main class="mfa-page setup-page">
+        <section class="mfa-card setup-card">
+            <a class="brand mfa-brand" href="{{ url_for('login') }}">
+                <span class="brand-mark">A</span>
+                <span>Alexandre <strong>AI</strong></span>
+            </a>
+
+            <span class="eyebrow">PAREAMENTO SEGURO</span>
+            <h1>Conecte seu Authenticator</h1>
+            <p>Escaneie o QR Code abaixo no Microsoft Authenticator ou Google Authenticator.</p>
+
+            <div class="qr-shell">
+                <img src="{{ qr_data }}" alt="QR Code para configurar autenticação em duas etapas">
+                <span class="qr-corners" aria-hidden="true"></span>
+            </div>
+
+            <div class="manual-key">
+                <span>Chave manual</span>
+                <code>{{ manual_key }}</code>
+                <small>Conta: {{ account_email or "Alexandre" }}</small>
+            </div>
+
+            <div class="setup-steps">
+                <span><b>1</b> Abra o aplicativo autenticador</span>
+                <span><b>2</b> Adicione uma conta e leia o QR Code</span>
+                <span><b>3</b> Digite abaixo o código exibido</span>
+            </div>
+
+            {% if error %}
+                <div class="alert auth-alert">{{ error }}</div>
+            {% endif %}
+
+            <form method="post" class="mfa-form" id="mfaSetupForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <label for="code">Confirmar código</label>
+                <input
+                    id="code"
+                    name="code"
+                    class="otp-input"
+                    type="text"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    maxlength="6"
+                    pattern="[0-9]{6}"
+                    placeholder="000000"
+                    required
+                    autofocus
+                >
+
+                <button class="primary-btn futuristic-btn" type="submit">
+                    <span>Confirmar e acessar</span>
+                    <b>→</b>
+                </button>
+            </form>
+
+            <div class="setup-warning">
+                <strong>Importante:</strong>
+                depois que confirmar o código, altere <code>MFA_SETUP_ENABLED</code> para <code>false</code> no Render.
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const otp = document.getElementById("code");
+        if (otp) {
+            otp.addEventListener("input", () => {
+                otp.value = otp.value.replace(/\D/g, "").slice(0, 6);
+            });
+        }
+    </script>
+</body>
+</html>
