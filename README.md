@@ -122,3 +122,11 @@ gunicorn app:app
 - Mesma linguagem visual entre login, verificação MFA e pareamento
 - Indicador de progresso das etapas de acesso
 - Cartões, hologramas, radar e componentes premium
+
+
+## V9 — Dark Matrix Auth
+
+- telas de Login, MFA e Setup MFA ainda mais dark
+- nova paleta em tons de preto, verde neon e cyber
+- animação de fundo estilo matriz com canvas
+- layout padronizado entre todas as telas de autenticação

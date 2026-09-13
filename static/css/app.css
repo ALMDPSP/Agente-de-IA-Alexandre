@@ -4136,3 +4136,259 @@ a {
         align-items: flex-start;
     }
 }
+
+
+/* =========================================================
+   V9 — AUTH DARK + MATRIX
+   ========================================================= */
+
+.auth-futuristic-body {
+    background:
+        radial-gradient(circle at 18% 12%, rgba(72, 255, 134, .05), transparent 24%),
+        radial-gradient(circle at 82% 18%, rgba(72, 255, 203, .04), transparent 20%),
+        radial-gradient(circle at 50% 100%, rgba(13, 91, 47, .13), transparent 34%),
+        #020609;
+    color: #e6fff1;
+}
+
+.auth-grid-bg {
+    opacity: .35;
+    background-image:
+        linear-gradient(rgba(54, 97, 73, .12) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(54, 97, 73, .10) 1px, transparent 1px);
+    background-size: 34px 34px;
+}
+
+.auth-aurora-a {
+    background: radial-gradient(circle, rgba(28, 171, 88, .12), transparent 68%);
+    filter: blur(28px);
+}
+
+.auth-aurora-b {
+    background: radial-gradient(circle, rgba(17, 112, 86, .12), transparent 68%);
+    filter: blur(34px);
+}
+
+.auth-noise {
+    opacity: .06;
+}
+
+.matrix-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+    opacity: .34;
+    mix-blend-mode: screen;
+}
+
+.auth-shell-v2,
+.auth-stage-panel,
+.auth-panel-v2,
+.auth-card-v2,
+.auth-card-v2 * {
+    position: relative;
+}
+
+.auth-stage-panel,
+.auth-panel-v2 {
+    z-index: 1;
+}
+
+.auth-stage-panel {
+    border-right: 1px solid rgba(90, 140, 110, .14);
+    background:
+        linear-gradient(180deg, rgba(255,255,255,.010), rgba(255,255,255,0)),
+        linear-gradient(135deg, rgba(4, 10, 11, .88), rgba(3, 7, 8, .95));
+    box-shadow: inset -1px 0 0 rgba(126, 255, 171, .03);
+}
+
+.auth-stage-panel::after {
+    background: radial-gradient(circle, rgba(39, 191, 101, .10), transparent 66%);
+}
+
+.auth-card-v2 {
+    border: 1px solid rgba(91, 132, 105, .18);
+    background:
+        linear-gradient(180deg, rgba(154, 255, 194, .015), rgba(255,255,255,0)),
+        linear-gradient(160deg, rgba(7, 14, 16, .92), rgba(4, 9, 11, .96));
+    box-shadow:
+        0 24px 80px rgba(0,0,0,.52),
+        inset 0 1px 0 rgba(160,255,200,.03),
+        0 0 0 1px rgba(52, 104, 73, .06);
+}
+
+.brand strong,
+.eyebrow,
+.auth-stage-copy h1 span,
+.auth-stage-copy .eyebrow,
+.auth-card-header-v2 .eyebrow,
+.setup-link-v2 strong,
+.auth-status-card strong,
+.auth-mini-grid strong {
+    color: #8dffb7;
+}
+
+.brand-mark {
+    color: #03120b;
+    border-color: rgba(141, 255, 183, .32);
+    background: linear-gradient(135deg, #c9ffe0, #8dffb7);
+    box-shadow: 0 0 30px rgba(100, 255, 160, .12);
+}
+
+.system-online {
+    color: #8ce8b0;
+    border: 1px solid rgba(100, 255, 160, .14);
+    background: rgba(100, 255, 160, .05);
+}
+
+.system-online i,
+.status-pill i,
+.auth-progress .step.active i,
+.mfa-trust-row span i {
+    background: #8dffb7;
+    box-shadow: 0 0 12px rgba(141, 255, 183, .4);
+}
+
+.auth-stage-copy p,
+.auth-card-header-v2 p,
+.security-note small,
+.otp-helper,
+.auth-status-card small,
+.auth-mini-grid small,
+.back-login-v2,
+.form-row,
+.checkbox,
+.input-icon,
+.mfa-trust-row span {
+    color: #7fa08b;
+}
+
+.security-pills span,
+.auth-progress .step,
+.mfa-mini-badge,
+.auth-status-card,
+.auth-mini-grid > div,
+.setup-steps span,
+.manual-key-v2,
+.qr-shell-v2,
+.mfa-trust-row-v2 span {
+    border-color: rgba(106, 171, 123, .14);
+    background: rgba(117, 255, 163, .04);
+}
+
+.auth-icon-lock-v2,
+.holo-core,
+.radar-core {
+    border-color: rgba(141, 255, 183, .20);
+    color: #dffff0;
+    background: linear-gradient(145deg, rgba(55, 190, 104, .12), rgba(17, 86, 53, .16));
+    box-shadow: inset 0 0 18px rgba(80, 225, 126, .08), 0 0 35px rgba(67, 210, 118, .08);
+}
+
+.holo-orbit,
+.radar-ring,
+.holo-pulse {
+    border-color: rgba(141, 255, 183, .14);
+}
+
+.holo-grid {
+    border-color: rgba(92, 172, 121, .08);
+    background:
+        linear-gradient(rgba(141,255,183,.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(141,255,183,.025) 1px, transparent 1px);
+}
+
+.holo-node,
+.radar-dot {
+    background: #8dffb7;
+    box-shadow: 0 0 16px rgba(141, 255, 183, .42);
+}
+
+.holo-scan,
+.scanner-line {
+    background: linear-gradient(90deg, transparent, rgba(141,255,183,.78), transparent);
+    box-shadow: 0 0 18px rgba(141,255,183,.22);
+}
+
+.input-wrap input,
+.otp-input-v2 {
+    color: #effff5;
+    border-color: rgba(94, 143, 109, .16);
+    background:
+        linear-gradient(180deg, rgba(141,255,183,.018), rgba(255,255,255,.006)),
+        rgba(2, 8, 7, .84);
+}
+
+.input-wrap input::placeholder,
+.otp-input-v2::placeholder {
+    color: rgba(171, 216, 187, .32);
+}
+
+.input-wrap input:focus,
+.otp-input-v2:focus {
+    border-color: rgba(141, 255, 183, .42);
+    box-shadow: 0 0 0 4px rgba(141,255,183,.05), 0 0 24px rgba(141,255,183,.08);
+}
+
+.primary-btn,
+.auth-submit-btn {
+    color: #04120b;
+    background: linear-gradient(90deg, #b7ffd0, #8dffb7);
+    box-shadow: 0 14px 34px rgba(91, 255, 157, .12);
+}
+
+.primary-btn:hover {
+    box-shadow: 0 18px 40px rgba(91, 255, 157, .16);
+}
+
+.auth-submit-btn::after {
+    background: linear-gradient(110deg, transparent 0%, rgba(255,255,255,.18) 48%, transparent 100%);
+}
+
+.alert.auth-alert {
+    border-color: rgba(255, 105, 138, .22);
+    background: rgba(65, 12, 21, .50);
+    color: #ffc4d0;
+}
+
+.auth-security-note-v2 {
+    border-color: rgba(102, 199, 128, .16);
+    color: #99f1b2;
+    background: rgba(18, 56, 30, .22);
+}
+
+.auth-divider span,
+.manual-key code,
+.manual-key-v2 code,
+.setup-warning code {
+    color: #b8ffd1;
+}
+
+.setup-warning-v2 {
+    color: #f0e7c1;
+    border-color: rgba(255, 206, 103, .18);
+    background: rgba(74, 55, 11, .28);
+}
+
+.auth-card-footer {
+    color: #62806f;
+}
+
+@media (max-width: 1100px) {
+    .matrix-canvas {
+        opacity: .26;
+    }
+}
+
+@media (max-width: 760px) {
+    .matrix-canvas {
+        opacity: .21;
+    }
+
+    .auth-stage-panel {
+        border-bottom: 1px solid rgba(90, 140, 110, .14);
+    }
+}
