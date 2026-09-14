@@ -3,7 +3,7 @@ const $$ = selector => [...document.querySelectorAll(selector)];
 
 const csrfToken = $("#csrfToken")?.value;
 
-const STORAGE = {
+const LEGACY_STORAGE = {
     projects: "alexandre_ai_projects_v2",
     chat: "alexandre_ai_chat_history_v2",
     history: "alexandre_ai_search_history_v1",
@@ -11,21 +11,25 @@ const STORAGE = {
 };
 
 const state = {
-    projects: loadJson(STORAGE.projects, []),
-    activeProjectId: localStorage.getItem(STORAGE.activeProject) || "",
+    projects: [],
+    chat: [],
+    history: [],
+    activeProjectId: "",
 };
 
-function loadJson(key, fallback) {
-    try {
-        const value = JSON.parse(localStorage.getItem(key));
-        return value ?? fallback;
-    } catch {
-        return fallback;
+async function apiRequest(url, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
+        headers["Content-Type"] = "application/json";
     }
-}
-
-function saveJson(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
+    if (options.method && options.method !== "GET" && csrfToken) {
+        headers["X-CSRFToken"] = csrfToken;
+    }
+    const response = await fetch(url, { ...options, headers });
+    let data = {};
+    try { data = await response.json(); } catch { data = {}; }
+    if (!response.ok) throw new Error(data.error || `Erro HTTP ${response.status}`);
+    return data;
 }
 
 function uid(prefix = "id") {
@@ -51,7 +55,7 @@ function tokenize(text) {
         "de","da","do","das","dos","a","o","as","os","e","em","para","por","com","um","uma",
         "que","se","no","na","nos","nas","ao","aos","como","mais","menos","sobre","qual","quais",
         "me","meu","minha","meus","minhas","este","esta","esse","essa","isso","isto","ser","tem",
-        "ter","foi","sao","é","é","the","and","of","to","in"
+        "ter","foi","sao","é","the","and","of","to","in"
     ]);
 
     return normalizeForSearch(text)
@@ -82,15 +86,8 @@ function ensureProjectShape(project) {
     return project;
 }
 
-state.projects = state.projects.map(ensureProjectShape);
-
 function getProject(id) {
     return state.projects.find(project => project.id === id);
-}
-
-function saveProjects() {
-    saveJson(STORAGE.projects, state.projects);
-    renderProjectDependentUI();
 }
 
 function allDocuments(projects = state.projects) {
@@ -102,22 +99,23 @@ function totalChunks() {
 }
 
 function getSearchHistory() {
-    return loadJson(STORAGE.history, []);
+    return state.history;
 }
 
 function getChatHistory() {
-    return loadJson(STORAGE.chat, []);
+    return state.chat;
 }
 
-function saveChatHistory(history) {
-    saveJson(STORAGE.chat, history.slice(-100));
+async function persistActiveProject() {
+    await apiRequest("/api/settings/active-project", {
+        method: "PUT",
+        body: JSON.stringify({ projectId: state.activeProjectId || "" }),
+    });
 }
 
-function addSearchHistory(query, projectId, provider = "", usedDocuments = []) {
-    const history = getSearchHistory();
+async function addSearchHistory(query, projectId, provider = "", usedDocuments = []) {
     const project = getProject(projectId);
-
-    history.unshift({
+    const item = {
         id: uid("search"),
         query,
         projectId: projectId || "",
@@ -125,11 +123,16 @@ function addSearchHistory(query, projectId, provider = "", usedDocuments = []) {
         provider,
         usedDocuments,
         createdAt: new Date().toISOString(),
-    });
-
-    saveJson(STORAGE.history, history.slice(0, 500));
+    };
+    state.history.unshift(item);
+    state.history = state.history.slice(0, 500);
     renderHistory();
     updateStats();
+    try {
+        await apiRequest("/api/history", { method: "POST", body: JSON.stringify(item) });
+    } catch (error) {
+        console.error("Falha ao persistir histórico:", error);
+    }
 }
 
 function scoreChunk(chunk, queryTokens) {
@@ -304,26 +307,25 @@ function renderProjects() {
             </div>
         `;
 
-        card.querySelector('[data-action="activate"]').addEventListener("click", () => {
+        card.querySelector('[data-action="activate"]').addEventListener("click", async () => {
             state.activeProjectId = project.id;
-            localStorage.setItem(STORAGE.activeProject, project.id);
             renderProjectOptions();
+            try { await persistActiveProject(); } catch (error) { console.error(error); }
             $("#agent")?.scrollIntoView({ behavior: "smooth" });
         });
 
         card.querySelector('[data-action="edit"]').addEventListener("click", () => openProjectForm(project));
 
-        card.querySelector('[data-action="delete"]').addEventListener("click", () => {
+        card.querySelector('[data-action="delete"]').addEventListener("click", async () => {
             if (!confirm(`Excluir o projeto "${project.name}" e todos os documentos importados nele?`)) return;
-
-            state.projects = state.projects.filter(item => item.id !== project.id);
-
-            if (state.activeProjectId === project.id) {
-                state.activeProjectId = "";
-                localStorage.removeItem(STORAGE.activeProject);
+            try {
+                await apiRequest(`/api/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" });
+                state.projects = state.projects.filter(item => item.id !== project.id);
+                if (state.activeProjectId === project.id) state.activeProjectId = "";
+                renderProjectDependentUI();
+            } catch (error) {
+                alert(`Não foi possível excluir: ${error.message}`);
             }
-
-            saveProjects();
         });
 
         grid.appendChild(card);
@@ -348,57 +350,49 @@ function closeProjectForm() {
 $("#newProjectBtn")?.addEventListener("click", () => openProjectForm());
 $("#cancelProjectBtn")?.addEventListener("click", closeProjectForm);
 
-$("#projectForm")?.addEventListener("submit", event => {
+$("#projectForm")?.addEventListener("submit", async event => {
     event.preventDefault();
-
     const id = $("#projectId").value;
     const name = $("#projectName").value.trim();
     const description = $("#projectDescription").value.trim();
     const status = $("#projectStatus").value;
-
     if (!name) return;
 
-    if (id) {
-        const project = getProject(id);
-        if (project) {
-            project.name = name;
-            project.description = description;
-            project.status = status;
-            project.updatedAt = new Date().toISOString();
+    try {
+        if (id) {
+            await apiRequest(`/api/projects/${encodeURIComponent(id)}`, {
+                method: "PUT",
+                body: JSON.stringify({ name, description, status }),
+            });
+            const project = getProject(id);
+            if (project) {
+                project.name = name;
+                project.description = description;
+                project.status = status;
+                project.updatedAt = new Date().toISOString();
+            }
+        } else {
+            const project = await apiRequest("/api/projects", {
+                method: "POST",
+                body: JSON.stringify({ id: uid("project"), name, description, status }),
+            });
+            state.projects.unshift(ensureProjectShape(project));
+            if (!state.activeProjectId) {
+                state.activeProjectId = project.id;
+                await persistActiveProject();
+            }
         }
-    } else {
-        const project = {
-            id: uid("project"),
-            name,
-            description,
-            status,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            documents: [],
-        };
-
-        state.projects.unshift(project);
-
-        if (!state.activeProjectId) {
-            state.activeProjectId = project.id;
-            localStorage.setItem(STORAGE.activeProject, project.id);
-        }
+        renderProjectDependentUI();
+        closeProjectForm();
+    } catch (error) {
+        alert(`Não foi possível salvar o projeto: ${error.message}`);
     }
-
-    saveProjects();
-    closeProjectForm();
 });
 
-$("#activeProjectSelect")?.addEventListener("change", event => {
+$("#activeProjectSelect")?.addEventListener("change", async event => {
     state.activeProjectId = event.target.value;
-
-    if (state.activeProjectId) {
-        localStorage.setItem(STORAGE.activeProject, state.activeProjectId);
-    } else {
-        localStorage.removeItem(STORAGE.activeProject);
-    }
-
     updateContextStatus();
+    try { await persistActiveProject(); } catch (error) { console.error(error); }
 });
 
 function updateContextStatus() {
@@ -439,29 +433,14 @@ $("#localFileInput")?.addEventListener("change", renderSelectedFilesPreview);
 async function importSingleFile(file, projectId) {
     const formData = new FormData();
     formData.append("file", file);
-
-    const response = await fetch("/api/files/extract", {
+    const data = await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/documents`, {
         method: "POST",
-        headers: { "X-CSRFToken": csrfToken },
         body: formData,
     });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Falha ao importar.");
-
     const project = getProject(projectId);
     if (!project) throw new Error("Projeto não encontrado.");
-
     project.documents = project.documents || [];
-    project.documents.unshift({
-        id: uid("doc"),
-        title: data.title,
-        size: file.size,
-        importedAt: new Date().toISOString(),
-        characters: data.characters || data.content?.length || 0,
-        chunks: data.chunks || [],
-    });
-
+    project.documents.unshift(data);
     project.updatedAt = new Date().toISOString();
 }
 
@@ -502,7 +481,7 @@ $("#importLocalFileBtn")?.addEventListener("click", async () => {
         }
     }
 
-    saveProjects();
+    renderProjectDependentUI();
 
     $("#localFileInput").value = "";
     renderSelectedFilesPreview();
@@ -572,19 +551,23 @@ function renderKnowledgeDocuments() {
             </div>
         `;
 
-        card.querySelector('[data-action="activate"]').addEventListener("click", () => {
+        card.querySelector('[data-action="activate"]').addEventListener("click", async () => {
             state.activeProjectId = project.id;
-            localStorage.setItem(STORAGE.activeProject, project.id);
             renderProjectOptions();
+            try { await persistActiveProject(); } catch (error) { console.error(error); }
             $("#agent")?.scrollIntoView({ behavior: "smooth" });
         });
 
-        card.querySelector('[data-action="delete"]').addEventListener("click", () => {
+        card.querySelector('[data-action="delete"]').addEventListener("click", async () => {
             if (!confirm(`Excluir "${document.title}" da base de conhecimento?`)) return;
-
-            project.documents = (project.documents || []).filter(item => item.id !== document.id);
-            project.updatedAt = new Date().toISOString();
-            saveProjects();
+            try {
+                await apiRequest(`/api/documents/${encodeURIComponent(document.id)}`, { method: "DELETE" });
+                project.documents = (project.documents || []).filter(item => item.id !== document.id);
+                project.updatedAt = new Date().toISOString();
+                renderProjectDependentUI();
+            } catch (error) {
+                alert(`Não foi possível excluir: ${error.message}`);
+            }
         });
 
         grid.appendChild(card);
@@ -630,9 +613,11 @@ function appendMessage(text, type, persist = true, provider = "", documents = []
     chatWindow.scrollTop = chatWindow.scrollHeight;
 
     if (persist) {
-        const history = getChatHistory();
-        history.push({ text, type, provider, documents, ts: Date.now() });
-        saveChatHistory(history);
+        const item = { text, type, provider, documents, ts: Date.now() };
+        state.chat.push(item);
+        state.chat = state.chat.slice(-500);
+        apiRequest("/api/chat", { method: "POST", body: JSON.stringify(item) })
+            .catch(error => console.error("Falha ao persistir conversa:", error));
     }
 }
 
@@ -775,10 +760,15 @@ $$("[data-prompt]").forEach(button => {
     button.addEventListener("click", () => sendMessage(button.dataset.prompt || ""));
 });
 
-$("#clearChatBtn")?.addEventListener("click", () => {
+$("#clearChatBtn")?.addEventListener("click", async () => {
     if (!confirm("Limpar a conversa atual? O histórico de pesquisas continuará disponível.")) return;
-    localStorage.removeItem(STORAGE.chat);
-    renderDefaultAssistant();
+    try {
+        await apiRequest("/api/chat", { method: "DELETE" });
+        state.chat = [];
+        renderDefaultAssistant();
+    } catch (error) {
+        alert(`Não foi possível limpar a conversa: ${error.message}`);
+    }
 });
 
 // Histórico
@@ -826,19 +816,23 @@ function renderHistory() {
 
             if (item.projectId && getProject(item.projectId)) {
                 state.activeProjectId = item.projectId;
-                localStorage.setItem(STORAGE.activeProject, item.projectId);
                 renderProjectOptions();
+                persistActiveProject().catch(error => console.error(error));
             }
 
             $("#agent")?.scrollIntoView({ behavior: "smooth" });
             chatInput.focus();
         });
 
-        row.querySelector(".history-delete-btn").addEventListener("click", () => {
-            const next = getSearchHistory().filter(historyItem => historyItem.id !== item.id);
-            saveJson(STORAGE.history, next);
-            renderHistory();
-            updateStats();
+        row.querySelector(".history-delete-btn").addEventListener("click", async () => {
+            try {
+                await apiRequest(`/api/history?id=${encodeURIComponent(item.id)}`, { method: "DELETE" });
+                state.history = state.history.filter(historyItem => historyItem.id !== item.id);
+                renderHistory();
+                updateStats();
+            } catch (error) {
+                alert(`Não foi possível excluir: ${error.message}`);
+            }
         });
 
         list.appendChild(row);
@@ -847,12 +841,16 @@ function renderHistory() {
 
 $("#historySearch")?.addEventListener("input", renderHistory);
 
-$("#clearHistoryBtn")?.addEventListener("click", () => {
-    if (!confirm("Apagar todo o histórico de pesquisas deste navegador?")) return;
-
-    localStorage.removeItem(STORAGE.history);
-    renderHistory();
-    updateStats();
+$("#clearHistoryBtn")?.addEventListener("click", async () => {
+    if (!confirm("Apagar todo o histórico de pesquisas salvo no banco?")) return;
+    try {
+        await apiRequest("/api/history", { method: "DELETE" });
+        state.history = [];
+        renderHistory();
+        updateStats();
+    } catch (error) {
+        alert(`Não foi possível apagar o histórico: ${error.message}`);
+    }
 });
 
 // Backup
@@ -891,24 +889,9 @@ $("#importBackupInput")?.addEventListener("change", async event => {
             throw new Error("Backup inválido.");
         }
 
-        state.projects = data.projects.map(ensureProjectShape);
-        state.activeProjectId = data.activeProjectId || "";
-
-        saveJson(STORAGE.projects, state.projects);
-        saveJson(STORAGE.chat, Array.isArray(data.chat) ? data.chat : []);
-        saveJson(STORAGE.history, Array.isArray(data.searchHistory) ? data.searchHistory : []);
-
-        if (state.activeProjectId) {
-            localStorage.setItem(STORAGE.activeProject, state.activeProjectId);
-        } else {
-            localStorage.removeItem(STORAGE.activeProject);
-        }
-
-        renderProjectDependentUI();
-        loadChat();
-        renderHistory();
-
-        $("#backupStatus").textContent = "Backup restaurado com sucesso.";
+        await apiRequest("/api/backup/import", { method: "POST", body: JSON.stringify(data) });
+        await loadInitialState();
+        $("#backupStatus").textContent = "Backup restaurado no PostgreSQL com sucesso.";
     } catch (error) {
         $("#backupStatus").textContent = `Erro ao importar backup: ${error.message}`;
     } finally {
@@ -930,10 +913,47 @@ function renderProjectDependentUI() {
     updateStats();
 }
 
-renderProjectDependentUI();
-renderSelectedFilesPreview();
-loadChat();
-renderHistory();
+async function migrateLegacyLocalStorageIfNeeded(serverState) {
+    if (serverState.projects?.length || serverState.chat?.length || serverState.searchHistory?.length) return serverState;
+    try {
+        const projects = JSON.parse(localStorage.getItem(LEGACY_STORAGE.projects) || "[]");
+        const chat = JSON.parse(localStorage.getItem(LEGACY_STORAGE.chat) || "[]");
+        const searchHistory = JSON.parse(localStorage.getItem(LEGACY_STORAGE.history) || "[]");
+        const activeProjectId = localStorage.getItem(LEGACY_STORAGE.activeProject) || "";
+        if (!projects.length && !chat.length && !searchHistory.length) return serverState;
+        const legacy = { projects, chat, searchHistory, activeProjectId };
+        await apiRequest("/api/state/import", { method: "POST", body: JSON.stringify(legacy) });
+        Object.values(LEGACY_STORAGE).forEach(key => localStorage.removeItem(key));
+        return await apiRequest("/api/state");
+    } catch (error) {
+        console.warn("Migração automática do localStorage não concluída:", error);
+        return serverState;
+    }
+}
+
+async function loadInitialState() {
+    try {
+        let data = await apiRequest("/api/state");
+        data = await migrateLegacyLocalStorageIfNeeded(data);
+        state.projects = (data.projects || []).map(ensureProjectShape);
+        state.chat = Array.isArray(data.chat) ? data.chat : [];
+        state.history = Array.isArray(data.searchHistory) ? data.searchHistory : [];
+        state.activeProjectId = data.activeProjectId || "";
+        renderProjectDependentUI();
+        renderSelectedFilesPreview();
+        loadChat();
+        renderHistory();
+    } catch (error) {
+        console.error(error);
+        const status = $("#backupStatus");
+        if (status) status.textContent = `Banco indisponível: ${error.message}`;
+        renderProjectDependentUI();
+        renderDefaultAssistant();
+        renderHistory();
+    }
+}
+
+loadInitialState();
 loadAgentStatus();
 
 

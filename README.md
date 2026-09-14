@@ -1,163 +1,80 @@
-# Alexandre AI — V7 Arquivos Inteligentes
+# Alexandre AI — Agente de IA pessoal
 
-Versão focada em projetos pessoais e arquivos locais, sem integração Microsoft e sem banco de dados.
+Aplicação Flask com autenticação, MFA, fallback entre provedores de IA, base de conhecimento por projeto e persistência PostgreSQL.
 
-## O que mudou
+## Arquitetura
 
-A integração OneNote / OneDrive foi removida.
+- **Frontend:** HTML/CSS/JavaScript responsivo.
+- **Backend:** Flask + Gunicorn.
+- **IA:** fallback Groq → Gemini → Cloudflare conforme as chaves configuradas.
+- **Banco:** PostgreSQL, preparado para Aiven.
+- **Hospedagem:** preparado para Render.
+- **Segurança:** login, MFA TOTP, CSRF, cookies HttpOnly/SameSite e conexão PostgreSQL via SSL.
 
-Agora o conhecimento do agente vem de arquivos enviados pelo próprio usuário.
+## Persistência PostgreSQL
 
-## Funcionamento
+Projetos, documentos, chunks, conversa, histórico e projeto ativo são armazenados no PostgreSQL. O navegador não é mais a fonte de persistência.
 
-```text
-Arquivo
-  ↓
-Extração de texto
-  ↓
-Divisão em trechos
-  ↓
-Armazenamento no navegador
-  ↓
-Pergunta
-  ↓
-Busca dos trechos mais relevantes
-  ↓
-Groq → Gemini → Cloudflare
-  ↓
-Resposta contextualizada
-```
+Para usuários vindos da versão antiga, existe uma migração automática: se o banco estiver vazio e houver dados antigos no `localStorage`, eles são enviados uma única vez ao PostgreSQL e as chaves antigas são removidas do navegador.
 
-## Tipos de arquivo
-
-- PDF
-- DOCX
-- XLSX / XLSM
-- TXT
-- Markdown
-- CSV
-- JSON
-- XML
-- HTML
-- LOG
-
-Limite atual por upload: 15 MB.
-
-## Projetos
-
-Cada projeto pode ter:
-
-- Nome
-- Descrição
-- Status
-- Vários documentos
-- Centenas de trechos indexados
-
-Ao selecionar um projeto como ativo, o agente busca automaticamente os trechos mais relevantes para cada pergunta.
-
-## Busca inteligente
-
-A versão V7 não envia todos os documentos para a IA.
-
-Ela:
-
-1. transforma a pergunta em palavras relevantes;
-2. pesquisa essas palavras nos trechos indexados;
-3. atribui uma pontuação a cada trecho;
-4. seleciona os melhores resultados;
-5. envia somente esses trechos ao modelo.
-
-Isso economiza contexto e melhora a precisão.
-
-## Histórico
-
-Inclui:
-
-- histórico das perguntas;
-- busca;
-- reutilização;
-- exclusão individual;
-- botão Limpar histórico.
-
-## Backup
-
-Exporta em JSON:
-
-- projetos;
-- descrições;
-- documentos extraídos;
-- chunks/trechos;
-- conversa;
-- histórico.
-
-Assim você pode restaurar tudo em outro navegador.
-
-## Importante
-
-O sistema não usa banco de dados.
-
-Os conteúdos extraídos dos arquivos ficam no `localStorage` do navegador.
-
-Arquivos muito grandes ou uma quantidade muito alta de documentos podem atingir o limite de armazenamento do navegador. Se isso acontecer, a evolução recomendada é usar IndexedDB ou um banco vetorial.
-
-## Render
-
-Build:
+## Variáveis obrigatórias
 
 ```text
-pip install -r requirements.txt
+SECRET_KEY
+ADMIN_EMAIL
+ADMIN_PASSWORD
+DATABASE_URL
 ```
 
-Start:
+Para MFA:
+
+```text
+MFA_ENABLED=true
+MFA_SETUP_ENABLED=false
+```
+
+Configure pelo menos um provedor de IA:
+
+```text
+GROQ_API_KEY
+GEMINI_API_KEY
+CLOUDFLARE_API_TOKEN
+CLOUDFLARE_ACCOUNT_ID
+```
+
+## DATABASE_URL do Aiven
+
+Use o formato:
+
+```text
+postgres://avnadmin:SENHA@HOST:PORTA/BANCO?sslmode=require
+```
+
+Nunca grave a senha diretamente no repositório. No Render, configure a URL em **Environment → DATABASE_URL**.
+
+## Deploy no Render
+
+O `render.yaml` já está preparado. O build instala as dependências e o serviço inicia com:
 
 ```text
 gunicorn app:app
 ```
 
+Ao iniciar, a aplicação cria automaticamente as tabelas necessárias se `DATABASE_URL` estiver configurada.
 
-## V8 — Auth futurista
+Mais detalhes: consulte `DATABASE_AIVEN.md`.
 
-- Tela de login padronizada com MFA e setup
-- Visual muito mais futurista e profissional
-- Mesma linguagem visual entre login, verificação MFA e pareamento
-- Indicador de progresso das etapas de acesso
-- Cartões, hologramas, radar e componentes premium
+## Desenvolvimento local
 
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Linux/macOS
+# .venv\\Scripts\\activate  # Windows
+pip install -r requirements.txt
+cp .env.example .env
+python app.py
+```
 
-## V9 — Dark Matrix Auth
+## Backup
 
-- telas de Login, MFA e Setup MFA ainda mais dark
-- nova paleta em tons de preto, verde neon e cyber
-- animação de fundo estilo matriz com canvas
-- layout padronizado entre todas as telas de autenticação
-
-
-## V10 — Site Dark Unificado
-
-- todo o site no mesmo estilo dark
-- login, MFA, setup e dashboard com a mesma linguagem visual
-- animação tipo matrix também no dashboard
-- topo da página com ícone visual do Alexandre AI
-- melhorias de responsividade para celular
-- cards, menus e áreas internas no mesmo padrão cyber dark
-
-
-## V11 — Dashboard fixo + App Icon + Mobile
-
-- sidebar fixa no desktop
-- topbar fixa no desktop e celular
-- tabulação/alinhamento do menu lateral aprimorados
-- ícone Alexandre AI no topo
-- favicon na aba do navegador
-- apple-touch-icon para iPhone/iPad
-- manifest com ícones 192x192 e 512x512 para Android
-- mesmo ícone usado no site e quando adicionado à tela inicial
-- navegação inferior específica para celular
-- scroll offsets ajustados para o header fixo
-
-
-## V12 — Ajuste de textos
-
-- removidas as frases anteriores sobre “entrada sombria”
-- nova comunicação padronizada em todas as telas: “Agente de IA próprio para Alexandre”
-- ajuste aplicado em Login, MFA, Setup MFA e Dashboard
+A tela de backup continua disponível. O arquivo JSON exportado agora representa os dados persistidos no PostgreSQL e pode ser restaurado pela própria interface.

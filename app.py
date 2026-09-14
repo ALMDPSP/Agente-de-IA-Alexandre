@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from datetime import timedelta
 from pathlib import Path
 
@@ -19,6 +20,12 @@ from flask_wtf.csrf import CSRFProtect
 from openai import OpenAI
 from openpyxl import load_workbook
 from pypdf import PdfReader
+
+from database import (
+    add_chat_message, add_history, clear_chat, create_project, database_configured,
+    delete_document, delete_history, delete_project, init_database, insert_document,
+    load_state, replace_state, set_active_project, update_project,
+)
 
 load_dotenv()
 
@@ -45,6 +52,12 @@ login_manager = LoginManager(app)
 login_manager.login_view = "login"
 login_manager.login_message = "Faça login para continuar."
 login_manager.login_message_category = "warning"
+
+try:
+    init_database()
+except Exception as exc:
+    logger.exception("Não foi possível inicializar o PostgreSQL: %s", exc)
+
 
 SYSTEM_PROMPT = """Você é Alexandre AI, o assistente pessoal de Alexandre.
 Responda sempre em português do Brasil, salvo se o usuário pedir outro idioma.
@@ -570,18 +583,15 @@ def logout():
 @app.route("/api/files/extract", methods=["POST"])
 @login_required
 def extract_uploaded_file():
+    """Mantido para compatibilidade; extrai sem persistir."""
     uploaded = request.files.get("file")
-
     if not uploaded or not uploaded.filename:
         return jsonify({"error": "Selecione um arquivo."}), 400
-
     try:
         text = extract_file_content(uploaded.stream, uploaded.filename)
         if not text:
             return jsonify({"error": "O arquivo não possui texto legível para importar."}), 400
-
         chunks = split_text_chunks(text, uploaded.filename)
-
         return jsonify({
             "title": uploaded.filename,
             "content": text,
@@ -591,12 +601,207 @@ def extract_uploaded_file():
             "chunkCount": len(chunks),
             "size": request.content_length or 0,
         })
-
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         logger.exception("Erro ao extrair arquivo")
         return jsonify({"error": f"Não foi possível ler o arquivo: {str(exc)[:160]}"}), 400
+
+
+def _owner_id():
+    return str(current_user.get_id())
+
+
+def _db_error(exc):
+    logger.exception("Erro PostgreSQL")
+    return jsonify({"error": f"Falha de persistência no PostgreSQL: {str(exc)[:180]}"}), 500
+
+
+@app.route("/api/state")
+@login_required
+def api_state():
+    if not database_configured():
+        return jsonify({"error": "DATABASE_URL não configurada no Render."}), 503
+    try:
+        return jsonify(load_state(_owner_id()))
+    except Exception as exc:
+        return _db_error(exc)
+
+
+@app.route("/api/state/import", methods=["POST"])
+@login_required
+def api_state_import():
+    try:
+        replace_state(_owner_id(), request.get_json(silent=True) or {})
+        return jsonify({"ok": True})
+    except (ValueError, TypeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return _db_error(exc)
+
+
+@app.route("/api/projects", methods=["POST"])
+@login_required
+def api_projects_create():
+    data = request.get_json(silent=True) or {}
+    name = str(data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Informe o nome do projeto."}), 400
+    project = {
+        "id": str(data.get("id") or f"project_{uuid.uuid4()}"),
+        "name": name[:200],
+        "description": str(data.get("description") or "")[:10000],
+        "status": str(data.get("status") or "Planejamento")[:100],
+    }
+    try:
+        return jsonify(create_project(_owner_id(), project)), 201
+    except Exception as exc:
+        return _db_error(exc)
+
+
+@app.route("/api/projects/<project_id>", methods=["PUT", "DELETE"])
+@login_required
+def api_project_item(project_id):
+    try:
+        if request.method == "DELETE":
+            delete_project(_owner_id(), project_id)
+            return jsonify({"ok": True})
+        data = request.get_json(silent=True) or {}
+        name = str(data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "Informe o nome do projeto."}), 400
+        row = update_project(_owner_id(), project_id, {
+            "name": name[:200],
+            "description": str(data.get("description") or "")[:10000],
+            "status": str(data.get("status") or "Planejamento")[:100],
+        })
+        if not row:
+            return jsonify({"error": "Projeto não encontrado."}), 404
+        return jsonify({"ok": True, "updatedAt": row["updated_at"].isoformat()})
+    except Exception as exc:
+        return _db_error(exc)
+
+
+@app.route("/api/settings/active-project", methods=["PUT"])
+@login_required
+def api_active_project():
+    data = request.get_json(silent=True) or {}
+    try:
+        set_active_project(_owner_id(), str(data.get("projectId") or ""))
+        return jsonify({"ok": True})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return _db_error(exc)
+
+
+@app.route("/api/projects/<project_id>/documents", methods=["POST"])
+@login_required
+def api_project_document(project_id):
+    uploaded = request.files.get("file")
+    if not uploaded or not uploaded.filename:
+        return jsonify({"error": "Selecione um arquivo."}), 400
+    try:
+        text = extract_file_content(uploaded.stream, uploaded.filename)
+        if not text:
+            return jsonify({"error": "O arquivo não possui texto legível para importar."}), 400
+        chunks = split_text_chunks(text, uploaded.filename)
+        document = {
+            "id": f"doc_{uuid.uuid4()}",
+            "title": uploaded.filename,
+            "size": int(request.content_length or 0),
+            "characters": len(text),
+            "chunks": chunks,
+        }
+        saved = insert_document(_owner_id(), project_id, document)
+        return jsonify(saved), 201
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return _db_error(exc)
+
+
+@app.route("/api/documents/<document_id>", methods=["DELETE"])
+@login_required
+def api_document_delete(document_id):
+    try:
+        if not delete_document(_owner_id(), document_id):
+            return jsonify({"error": "Documento não encontrado."}), 404
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return _db_error(exc)
+
+
+@app.route("/api/chat", methods=["POST", "DELETE"])
+@login_required
+def api_chat():
+    try:
+        if request.method == "DELETE":
+            clear_chat(_owner_id())
+            return jsonify({"ok": True})
+        data = request.get_json(silent=True) or {}
+        text = str(data.get("text") or "").strip()
+        if not text:
+            return jsonify({"error": "Mensagem vazia."}), 400
+        row = add_chat_message(_owner_id(), {
+            "text": text,
+            "type": data.get("type"),
+            "provider": data.get("provider") or "",
+            "documents": data.get("documents") or [],
+        })
+        return jsonify({"ok": True, "id": row["id"]}), 201
+    except Exception as exc:
+        return _db_error(exc)
+
+
+@app.route("/api/history", methods=["POST", "DELETE"])
+@login_required
+def api_history():
+    try:
+        if request.method == "DELETE":
+            history_id = request.args.get("id")
+            delete_history(_owner_id(), history_id)
+            return jsonify({"ok": True})
+        data = request.get_json(silent=True) or {}
+        query = str(data.get("query") or "").strip()
+        if not query:
+            return jsonify({"error": "Consulta vazia."}), 400
+        item = {
+            "id": str(data.get("id") or f"search_{uuid.uuid4()}"),
+            "query": query[:20000],
+            "projectId": str(data.get("projectId") or ""),
+            "projectName": str(data.get("projectName") or "Conversa geral"),
+            "provider": str(data.get("provider") or ""),
+            "usedDocuments": data.get("usedDocuments") or [],
+        }
+        add_history(_owner_id(), item)
+        return jsonify(item), 201
+    except Exception as exc:
+        return _db_error(exc)
+
+
+@app.route("/api/backup/export")
+@login_required
+def api_backup_export():
+    try:
+        payload = load_state(_owner_id())
+        payload["version"] = 3
+        payload["storage"] = "postgresql"
+        return jsonify(payload)
+    except Exception as exc:
+        return _db_error(exc)
+
+
+@app.route("/api/backup/import", methods=["POST"])
+@login_required
+def api_backup_import():
+    try:
+        replace_state(_owner_id(), request.get_json(silent=True) or {})
+        return jsonify({"ok": True})
+    except (ValueError, TypeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return _db_error(exc)
 
 
 @app.route("/api/agent/status")
@@ -656,7 +861,7 @@ def agent():
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok"}), 200
+    return jsonify({"status": "ok", "database": "configured" if database_configured() else "missing"}), 200
 
 
 if __name__ == "__main__":
