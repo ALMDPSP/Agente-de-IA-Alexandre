@@ -64,8 +64,9 @@ SYSTEM_PROMPT = """Você é Alexandre AI, o assistente pessoal de Alexandre.
 Responda sempre em português do Brasil, salvo se o usuário pedir outro idioma.
 Seja claro, objetivo, técnico quando necessário e útil.
 
-Você pode receber CONTEXTO PRIVADO DE PROJETO com trechos de documentos enviados pelo usuário.
-Use esse conteúdo como fonte primária quando a pergunta estiver relacionada ao projeto.
+Você pode receber CONTEXTO PRIVADO DA BASE PESSOAL com trechos selecionados automaticamente de todos os documentos sincronizados do usuário.
+Use esse conteúdo como fonte primária quando a pergunta puder ser respondida pelos documentos.
+A pesquisa não depende da seleção de projeto e pode combinar informações de arquivos diferentes.
 Nunca invente informações ausentes no contexto.
 Quando utilizar um documento, mencione naturalmente o nome do arquivo quando isso ajudar.
 Se o contexto for insuficiente, diga o que falta.
@@ -955,7 +956,7 @@ def api_history():
             "id": str(data.get("id") or f"search_{uuid.uuid4()}"),
             "query": query[:20000],
             "projectId": str(data.get("projectId") or ""),
-            "projectName": str(data.get("projectName") or "Conversa geral"),
+            "projectName": str(data.get("projectName") or "Toda a base"),
             "provider": str(data.get("provider") or ""),
             "usedDocuments": data.get("usedDocuments") or [],
         }
@@ -1022,9 +1023,9 @@ def agent():
         messages.append({
             "role": "system",
             "content": (
-                "CONTEXTO PRIVADO DO PROJETO:\n"
-                "Os trechos abaixo foram selecionados automaticamente dos arquivos "
-                "enviados pelo usuário porque parecem relevantes para a pergunta.\n\n"
+                "CONTEXTO PRIVADO DA BASE PESSOAL:\n"
+                "Os trechos abaixo foram selecionados automaticamente entre todos os arquivos "
+                "sincronizados/importados porque parecem relevantes para a pergunta.\n\n"
                 f"{project_context}"
             ),
         })

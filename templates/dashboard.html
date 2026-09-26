@@ -154,19 +154,16 @@
                         </div>
                     </div>
 
-                    <div class="agent-project-bar">
-                        <label for="activeProjectSelect">Projeto ativo</label>
-                        <select id="activeProjectSelect">
-                            <option value="">Sem projeto — conversa geral</option>
-                        </select>
-                        <span id="contextStatus">Nenhum arquivo será usado como contexto.</span>
+                    <div class="agent-project-bar global-knowledge-bar">
+                        <div class="global-knowledge-badge">◈ Base pessoal conectada</div>
+                        <span id="contextStatus">Carregando base de conhecimento...</span>
                     </div>
 
                     <div class="retrieval-indicator" id="retrievalIndicator">
                         <span class="retrieval-icon">◈</span>
                         <div>
                             <strong>Busca inteligente de conhecimento</strong>
-                            <small>A cada pergunta, o sistema procura os trechos mais relevantes dentro dos arquivos do projeto ativo.</small>
+                            <small>A cada pergunta, o sistema pesquisa automaticamente em toda a base sincronizada de C:\agenteIA e nos demais documentos importados.</small>
                         </div>
                     </div>
 
@@ -183,15 +180,15 @@
 
                     <form class="chat-composer futuristic-composer dark-composer" id="chatForm">
                         <input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
-                        <textarea id="chatInput" rows="1" placeholder="Pergunte sobre seus documentos, projetos ou qualquer outro assunto..." aria-label="Mensagem para o agente"></textarea>
+                        <textarea id="chatInput" rows="1" placeholder="Pergunte sobre qualquer informação da sua base de conhecimento..." aria-label="Mensagem para o agente"></textarea>
                         <button type="submit" id="chatSendBtn" aria-label="Enviar mensagem"><span class="send-icon">➤</span><span class="send-loading">•••</span></button>
                     </form>
 
                     <div class="quick-actions futuristic-quick-actions dark-quick-actions">
-                        <button type="button" data-prompt="Resuma os principais pontos dos documentos deste projeto.">Resumir documentos</button>
-                        <button type="button" data-prompt="Quais riscos, pendências e pontos de atenção existem nos arquivos deste projeto?">Identificar riscos</button>
-                        <button type="button" data-prompt="Crie um plano de ação usando as informações dos arquivos deste projeto.">Criar plano de ação</button>
-                        <button type="button" data-prompt="Quais informações mais importantes você encontrou nos documentos deste projeto?">Pontos importantes</button>
+                        <button type="button" data-prompt="Resuma os principais pontos encontrados em toda a minha base de conhecimento.">Resumir documentos</button>
+                        <button type="button" data-prompt="Quais riscos, pendências e pontos de atenção existem na minha base de conhecimento?">Identificar riscos</button>
+                        <button type="button" data-prompt="Crie um plano de ação usando as informações disponíveis em toda a minha base de conhecimento.">Criar plano de ação</button>
+                        <button type="button" data-prompt="Quais informações mais importantes você encontrou em toda a minha base de conhecimento?">Pontos importantes</button>
                     </div>
                 </section>
 

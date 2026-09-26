@@ -119,7 +119,7 @@ async function addSearchHistory(query, projectId, provider = "", usedDocuments =
         id: uid("search"),
         query,
         projectId: projectId || "",
-        projectName: project?.name || "Conversa geral",
+        projectName: project?.name || "Toda a base",
         provider,
         usedDocuments,
         createdAt: new Date().toISOString(),
@@ -154,62 +154,64 @@ function scoreChunk(chunk, queryTokens) {
     return score;
 }
 
-function retrieveRelevantChunks(projectId, query, maxChunks = 8) {
-    const project = getProject(projectId);
-    if (!project) return [];
-
+function retrieveRelevantChunksFromAllKnowledge(query, maxChunks = 12) {
     const tokens = tokenize(query);
     const candidates = [];
 
-    for (const document of project.documents || []) {
-        for (const chunk of document.chunks || []) {
-            const score = scoreChunk(chunk, tokens);
-            candidates.push({
-                ...chunk,
-                documentId: document.id,
-                documentTitle: document.title,
-                score,
-            });
+    for (const project of state.projects) {
+        for (const document of project.documents || []) {
+            for (const chunk of document.chunks || []) {
+                const score = scoreChunk(chunk, tokens);
+                candidates.push({
+                    ...chunk,
+                    projectId: project.id,
+                    projectName: project.name,
+                    documentId: document.id,
+                    documentTitle: document.title,
+                    sourcePath: document.sourcePath || document.title,
+                    score,
+                });
+            }
         }
     }
 
     candidates.sort((a, b) => b.score - a.score);
-
     const positive = candidates.filter(item => item.score > 0).slice(0, maxChunks);
     if (positive.length) return positive;
 
-    return candidates.slice(0, Math.min(3, maxChunks));
+    return candidates.slice(0, Math.min(4, maxChunks));
 }
 
-function buildProjectContext(projectId, query) {
-    const project = getProject(projectId);
-    if (!project) return { context: "", usedDocuments: [], chunkCount: 0 };
-
-    const chunks = retrieveRelevantChunks(projectId, query, 8);
-    const names = [...new Set(chunks.map(chunk => chunk.documentTitle))];
+function buildGlobalKnowledgeContext(query) {
+    const chunks = retrieveRelevantChunksFromAllKnowledge(query, 12);
+    const names = [...new Set(chunks.map(chunk => chunk.sourcePath || chunk.documentTitle))];
+    const documentCount = allDocuments().length;
+    const chunkCount = totalChunks();
 
     const parts = [
-        `PROJETO: ${project.name}`,
-        `STATUS: ${project.status || "Não informado"}`,
-        `DESCRIÇÃO: ${project.description || "Sem descrição"}`,
+        'BASE PESSOAL DE CONHECIMENTO DO USUÁRIO',
+        `Documentos disponíveis: ${documentCount}`,
+        `Trechos indexados: ${chunkCount}`,
+        'A busca abaixo percorreu automaticamente todos os documentos sincronizados, sem filtro por projeto.',
     ];
 
     if (chunks.length) {
-        parts.push("", "TRECHOS RELEVANTES DOS DOCUMENTOS:");
-
+        parts.push('', 'TRECHOS MAIS RELEVANTES ENCONTRADOS EM TODA A BASE:');
         chunks.forEach((chunk, index) => {
             parts.push(
-                "",
-                `[Trecho ${index + 1} | Arquivo: ${chunk.documentTitle}]`,
+                '',
+                `[Trecho ${index + 1} | Arquivo: ${chunk.sourcePath || chunk.documentTitle} | Coleção: ${chunk.projectName}]`,
                 chunk.text
             );
         });
     }
 
     return {
-        context: parts.join("\n").slice(0, 52000),
+        context: parts.join('\n').slice(0, 60000),
         usedDocuments: names,
         chunkCount: chunks.length,
+        totalDocuments: documentCount,
+        totalChunks: chunkCount,
     };
 }
 
@@ -235,21 +237,17 @@ $$(".nav-item").forEach(item => {
 // Projetos
 function renderProjectOptions() {
     const selects = [
-        $("#activeProjectSelect"),
         $("#fileProjectSelect"),
         $("#knowledgeProjectFilter"),
     ].filter(Boolean);
 
     selects.forEach(select => {
-        const isActive = select.id === "activeProjectSelect";
         const isFilter = select.id === "knowledgeProjectFilter";
         const currentValue = select.value;
 
         select.innerHTML = "";
 
-        if (isActive) {
-            select.add(new Option("Sem projeto — conversa geral", ""));
-        } else if (isFilter) {
+        if (isFilter) {
             select.add(new Option("Todos os projetos", ""));
         } else {
             select.add(new Option("Selecione um projeto", ""));
@@ -259,14 +257,12 @@ function renderProjectOptions() {
             select.add(new Option(project.name, project.id));
         });
 
-        if (isActive) {
-            select.value = getProject(state.activeProjectId) ? state.activeProjectId : "";
-        } else if ([...select.options].some(option => option.value === currentValue)) {
+        if ([...select.options].some(option => option.value === currentValue)) {
             select.value = currentValue;
         }
     });
 
-    updateContextStatus();
+    updateKnowledgeContextStatus();
 }
 
 function renderProjects() {
@@ -300,18 +296,20 @@ function renderProjects() {
             <div class="project-card-footer">
                 <small>Atualizado ${formatDate(project.updatedAt || project.createdAt)}</small>
                 <div class="project-card-actions">
-                    <button type="button" data-action="activate">Ativar</button>
+                    <button type="button" data-action="knowledge">Ver arquivos</button>
                     <button type="button" data-action="edit">Editar</button>
                     <button type="button" data-action="delete" class="danger-text-btn">Excluir</button>
                 </div>
             </div>
         `;
 
-        card.querySelector('[data-action="activate"]').addEventListener("click", async () => {
-            state.activeProjectId = project.id;
-            renderProjectOptions();
-            try { await persistActiveProject(); } catch (error) { console.error(error); }
-            $("#agent")?.scrollIntoView({ behavior: "smooth" });
+        card.querySelector('[data-action="knowledge"]').addEventListener("click", () => {
+            const filter = $("#knowledgeProjectFilter");
+            if (filter) {
+                filter.value = project.id;
+                filter.dispatchEvent(new Event("change"));
+            }
+            $("#knowledge")?.scrollIntoView({ behavior: "smooth" });
         });
 
         card.querySelector('[data-action="edit"]').addEventListener("click", () => openProjectForm(project));
@@ -389,26 +387,14 @@ $("#projectForm")?.addEventListener("submit", async event => {
     }
 });
 
-$("#activeProjectSelect")?.addEventListener("change", async event => {
-    state.activeProjectId = event.target.value;
-    updateContextStatus();
-    try { await persistActiveProject(); } catch (error) { console.error(error); }
-});
-
-function updateContextStatus() {
-    const project = getProject($("#activeProjectSelect")?.value || "");
+function updateKnowledgeContextStatus() {
     const label = $("#contextStatus");
-
     if (!label) return;
-
-    if (!project) {
-        label.textContent = "Nenhum arquivo será usado como contexto.";
-        return;
-    }
-
-    const documents = project.documents?.length || 0;
-    const chunks = (project.documents || []).reduce((sum, doc) => sum + (doc.chunks?.length || 0), 0);
-    label.textContent = `${project.name}: ${documents} documento(s) e ${chunks} trecho(s) disponíveis para busca.`;
+    const documents = allDocuments().length;
+    const chunks = totalChunks();
+    label.textContent = documents
+        ? `${documents} documento(s) e ${chunks} trecho(s) disponíveis. Toda a base será pesquisada automaticamente.`
+        : "Nenhum documento sincronizado ainda. Adicione ou sincronize arquivos em C:\\agenteIA.";
 }
 
 // Upload conhecimento
@@ -627,11 +613,13 @@ function renderKnowledgeDocuments() {
             </div>
         `;
 
-        card.querySelector('[data-action="activate"]').addEventListener("click", async () => {
-            state.activeProjectId = project.id;
-            renderProjectOptions();
-            try { await persistActiveProject(); } catch (error) { console.error(error); }
-            $("#agent")?.scrollIntoView({ behavior: "smooth" });
+        card.querySelector('[data-action="knowledge"]').addEventListener("click", () => {
+            const filter = $("#knowledgeProjectFilter");
+            if (filter) {
+                filter.value = project.id;
+                filter.dispatchEvent(new Event("change"));
+            }
+            $("#knowledge")?.scrollIntoView({ behavior: "smooth" });
         });
 
         card.querySelector('[data-action="delete"]').addEventListener("click", async () => {
@@ -773,7 +761,7 @@ function appendMessage(text, type, persist = true, provider = "", documents = []
 function renderDefaultAssistant() {
     chatWindow.innerHTML = "";
     appendMessage(
-        "Olá, Alexandre. Escolha um projeto e adicione arquivos ou uma pasta da sua máquina. Eu vou localizar os trechos relevantes e mostrar quando estiver analisando antes de responder.",
+        "Olá, Alexandre. Minha busca agora percorre automaticamente toda a sua base de conhecimento sincronizada. Pergunte sobre seus documentos e eu vou localizar os trechos mais relevantes antes de responder.",
         "assistant",
         false
     );
@@ -813,27 +801,24 @@ async function sendMessage(text) {
     if (chatSendBtn) chatSendBtn.disabled = true;
     if (chatInput) chatInput.disabled = true;
 
-    const projectId = $("#activeProjectSelect")?.value || "";
-    const retrieval = buildProjectContext(projectId, message);
+    const retrieval = buildGlobalKnowledgeContext(message);
     appendMessage(message, "user");
     chatInput.value = "";
     chatInput.style.height = "auto";
 
     const indicator = $("#retrievalIndicator");
-    if (projectId) {
-        indicator?.classList.add("retrieval-active");
-        indicator.querySelector("strong").textContent = `Contexto preparado: ${retrieval.chunkCount} trecho(s) relevante(s)`;
-        indicator.querySelector("small").textContent = retrieval.usedDocuments.length
-            ? `Arquivos consultados: ${retrieval.usedDocuments.join(", ")}`
-            : "Nenhum trecho relevante foi encontrado; o agente usará a descrição do projeto.";
-    }
+    indicator?.classList.add("retrieval-active");
+    indicator.querySelector("strong").textContent = `Busca global concluída: ${retrieval.chunkCount} trecho(s) relevante(s)`;
+    indicator.querySelector("small").textContent = retrieval.usedDocuments.length
+        ? `Arquivos consultados: ${retrieval.usedDocuments.join(", ")}`
+        : `A base possui ${retrieval.totalDocuments} documento(s), mas nenhum trecho relevante foi encontrado para esta pergunta.`;
 
     const history = getChatHistory().slice(-16).map(item => ({
         role: item.type === "assistant" ? "assistant" : "user",
         content: item.text,
     }));
 
-    startThinkingActivity(Boolean(projectId), retrieval.usedDocuments.length);
+    startThinkingActivity(true, retrieval.usedDocuments.length);
     addThinkingBubble();
 
     try {
@@ -848,12 +833,12 @@ async function sendMessage(text) {
         removeThinkingBubble();
         const providerLabel = `${data.provider} · ${data.model}`;
         appendMessage(data.reply, "assistant", true, providerLabel, retrieval.usedDocuments, true);
-        addSearchHistory(message, projectId, providerLabel, retrieval.usedDocuments);
+        addSearchHistory(message, "", providerLabel, retrieval.usedDocuments);
         stopThinkingActivity(`Resposta concluída via ${data.provider}.`);
     } catch (error) {
         removeThinkingBubble();
         appendMessage(`Erro: ${error.message}`, "assistant");
-        addSearchHistory(message, projectId, "Erro", retrieval.usedDocuments);
+        addSearchHistory(message, "", "Erro", retrieval.usedDocuments);
         stopThinkingActivity("Não foi possível concluir a resposta.");
     } finally {
         chatBusy = false;
@@ -930,12 +915,6 @@ function renderHistory() {
 
         row.querySelector(".history-reuse-btn").addEventListener("click", () => {
             chatInput.value = item.query;
-
-            if (item.projectId && getProject(item.projectId)) {
-                state.activeProjectId = item.projectId;
-                renderProjectOptions();
-                persistActiveProject().catch(error => console.error(error));
-            }
 
             $("#agent")?.scrollIntoView({ behavior: "smooth" });
             chatInput.focus();
