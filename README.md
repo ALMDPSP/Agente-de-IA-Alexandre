@@ -1,89 +1,59 @@
-# Alexandre AI — V7.1
+# Alexandre AI — V7.3
 
-**Atualização:** tratamento automático de alta demanda/limite do Gemini (HTTP 503/429) com exponential backoff e status no chat.
+Agente pessoal com Gemini, busca global sobre a base sincronizada e monitor local Windows sem Python.
 
-# Alexandre AI — Gemini + Conhecimento Local
+## Servidor / Render
 
-Agente pessoal em Flask com login/MFA, chat dinâmico, base de conhecimento por arquivos e **Gemini como único provedor de IA**.
+O backend continua publicado normalmente no Render. Configure pelo menos:
 
-## O que mudou nesta versão
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL=gemini-3.8-flash`
+- `SYNC_TOKEN` com um valor forte e privado
 
-- **Sem PostgreSQL**: não existe `DATABASE_URL` e não é necessário banco externo.
-- **Somente Gemini**: Groq e Cloudflare foram removidos.
-- **Conhecimento local automático**: quando executado no Windows, o agente pode ler `C:\agenteIA` diretamente.
-- **Sincronização para a rede**: `sync_local_knowledge.py` envia os arquivos de `C:\agenteIA` para a aplicação online usando `SYNC_TOKEN`.
-- **Persistência em arquivos**: projetos, trechos extraídos, histórico e conversa ficam em `data/state_admin.json` (ou no diretório definido por `DATA_DIR`).
-- **Chat dinâmico**: mostra quando está pensando, consultando conhecimento e gerando a resposta.
+O `SYNC_TOKEN` será usado apenas para autenticar o agente local.
 
-## Executar no Windows
+## Agente local Windows — sem Python
 
-1. Instale Python 3.11+.
-2. Crie a pasta `C:\agenteIA`.
-3. Coloque seus PDF, DOCX, XLSX, TXT, MD, CSV, JSON, XML, HTML ou LOG nessa pasta.
-4. Instale as dependências:
+O arquivo abaixo é um executável standalone x64:
 
-   `pip install -r requirements.txt`
+`AlexandreAI.exe`
 
-5. Configure as variáveis:
+Ele não requer Python, BAT ou Prompt de Comando.
 
-   - `ADMIN_EMAIL`
-   - `ADMIN_PASSWORD`
-   - `SECRET_KEY`
-   - `GEMINI_API_KEY`
-   - opcional: `GEMINI_MODEL`
-   - opcional: `LOCAL_KNOWLEDGE_DIR` (padrão no Windows: `C:\agenteIA`)
+### Primeira execução
 
-6. Execute:
+1. No Windows, dê dois cliques em `AlexandreAI.exe`.
+2. O navegador abrirá a página local de configuração.
+3. Confirme a URL do site (por padrão `https://agente-de-ia-alexandre.onrender.com`).
+4. Confirme a pasta `C:\agenteIA`.
+5. Informe o mesmo `SYNC_TOKEN` configurado no Render.
+6. Clique em **Conectar pasta e ativar sincronização**.
 
-   `python app.py`
+O agente então:
 
-No painel, use **Ler C:\agenteIA agora** para indexar a pasta.
+- cria `C:\agenteIA` se ela ainda não existir;
+- instala uma cópia em `%LOCALAPPDATA%\AlexandreAI\AlexandreAI.exe`;
+- registra a inicialização automática com o Windows para o usuário atual;
+- faz uma sincronização completa inicial;
+- verifica alterações automaticamente a cada 10 segundos.
 
-## Sincronizar C:\agenteIA com a versão online
+### Status visível
 
-Na versão online configure `SYNC_TOKEN`. No seu Windows configure o mesmo token e a URL pública:
+O agente cria:
 
-- `AGENT_URL=https://seu-servico.onrender.com`
-- `SYNC_TOKEN=seu-token-secreto`
+- `C:\Alexandre AI - Status.html`
+- `C:\Alexandre AI - Abrir.url`
 
-Depois execute `sincronizar_agenteIA.bat` ou:
+Também há um painel local em:
 
-`python sync_local_knowledge.py`
+`http://127.0.0.1:8765/status`
 
-O script percorre `C:\agenteIA` e envia os arquivos compatíveis para o projeto **Conhecimento Local**.
+Nele é possível ver a pasta detectada, quantidade de arquivos, última sincronização, erro atual e executar **Sincronizar agora**.
 
-## Importante sobre Render
+## Tipos de arquivos monitorados
 
-O Render não consegue acessar o disco `C:\` do seu computador diretamente. O acesso automático a `C:\agenteIA` funciona quando a aplicação está rodando no próprio PC. Para a versão online, use o sincronizador incluído.
+PDF, DOCX, XLSX, XLS, TXT, CSV, JSON, Markdown, HTML, XML e LOG.
 
-No plano sem disco persistente, os arquivos locais do serviço podem ser apagados quando a instância for recriada/reimplantada. Como a fonte principal continua sendo `C:\agenteIA`, basta executar a sincronização novamente. Para persistência contínua no servidor, configure um volume/disco persistente e aponte `DATA_DIR` para ele.
+## Fluxo
 
-
-## PDFs escaneados, diplomas e certificados
-
-A V4 detecta automaticamente PDFs que não possuem texto pesquisável. Nesses casos, o próprio Gemini faz a leitura visual do PDF e o conteúdo reconhecido é indexado na base de conhecimento. Isso permite consultar diplomas, certificados digitalizados e outros documentos que sejam essencialmente imagens.
-
-## V7 — Agente Local automático no Windows
-
-A sincronização manual por BAT foi removida. A V7 inclui um monitor residente que observa `C:\agenteIA` e sincroniza automaticamente com a versão online.
-
-### Instalação única no computador
-
-1. Tenha Python 3 instalado no Windows.
-2. No Render, crie/mantenha `SYNC_TOKEN` com um valor forte.
-3. Execute `instalar_agente_local.py` uma única vez.
-4. Informe a URL do site e o mesmo `SYNC_TOKEN` do Render.
-5. O agente passa a iniciar automaticamente com o Windows e aparece na bandeja do sistema.
-
-Depois disso, basta copiar, alterar ou remover arquivos em `C:\agenteIA`. Não é necessário executar BAT ou clicar em importar.
-
-### Menu da bandeja
-
-- Abrir Alexandre AI
-- Abrir `C:\agenteIA`
-- Sincronizar agora
-- Sair
-
-### Formatos monitorados
-
-PDF, DOCX, XLSX/XLSM, TXT, MD, CSV, JSON, LOG, XML e HTML.
+`C:\agenteIA` → `AlexandreAI.exe` → Render → base pessoal → busca global → Gemini.
