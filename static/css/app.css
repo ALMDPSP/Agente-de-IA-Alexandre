@@ -5239,3 +5239,15 @@ textarea:focus,
     .dark-chat-window { min-height: 360px; max-height: 62vh; }
     .message-bubble { max-width: 88%; }
 }
+
+
+.local-folder-command {
+    display:flex; align-items:center; justify-content:space-between; gap:18px;
+    margin:18px 0; padding:16px 18px; border:1px solid rgba(91,255,160,.22);
+    border-radius:18px; background:linear-gradient(135deg, rgba(25,66,48,.30), rgba(8,17,14,.62));
+    box-shadow: inset 0 0 28px rgba(56,255,143,.025);
+}
+.local-folder-command > div { min-width:0; }
+.local-folder-command strong { display:block; color:#d9ffe5; font-size:15px; margin-top:3px; overflow-wrap:anywhere; }
+.local-folder-command small { display:block; color:#789387; margin-top:5px; line-height:1.45; }
+@media (max-width:720px){ .local-folder-command{flex-direction:column; align-items:stretch;} .local-folder-command button{width:100%;} }

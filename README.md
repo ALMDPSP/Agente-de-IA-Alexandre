@@ -1,80 +1,55 @@
-# Alexandre AI — Agente de IA pessoal
+# Alexandre AI — Gemini + Conhecimento Local
 
-Aplicação Flask com autenticação, MFA, fallback entre provedores de IA, base de conhecimento por projeto e persistência PostgreSQL.
+Agente pessoal em Flask com login/MFA, chat dinâmico, base de conhecimento por arquivos e **Gemini como único provedor de IA**.
 
-## Arquitetura
+## O que mudou nesta versão
 
-- **Frontend:** HTML/CSS/JavaScript responsivo.
-- **Backend:** Flask + Gunicorn.
-- **IA:** fallback Groq → Gemini → Cloudflare conforme as chaves configuradas.
-- **Banco:** PostgreSQL, preparado para Aiven.
-- **Hospedagem:** preparado para Render.
-- **Segurança:** login, MFA TOTP, CSRF, cookies HttpOnly/SameSite e conexão PostgreSQL via SSL.
+- **Sem PostgreSQL**: não existe `DATABASE_URL` e não é necessário banco externo.
+- **Somente Gemini**: Groq e Cloudflare foram removidos.
+- **Conhecimento local automático**: quando executado no Windows, o agente pode ler `C:\agenteIA` diretamente.
+- **Sincronização para a rede**: `sync_local_knowledge.py` envia os arquivos de `C:\agenteIA` para a aplicação online usando `SYNC_TOKEN`.
+- **Persistência em arquivos**: projetos, trechos extraídos, histórico e conversa ficam em `data/state_admin.json` (ou no diretório definido por `DATA_DIR`).
+- **Chat dinâmico**: mostra quando está pensando, consultando conhecimento e gerando a resposta.
 
-## Persistência PostgreSQL
+## Executar no Windows
 
-Projetos, documentos, chunks, conversa, histórico e projeto ativo são armazenados no PostgreSQL. O navegador não é mais a fonte de persistência.
+1. Instale Python 3.11+.
+2. Crie a pasta `C:\agenteIA`.
+3. Coloque seus PDF, DOCX, XLSX, TXT, MD, CSV, JSON, XML, HTML ou LOG nessa pasta.
+4. Instale as dependências:
 
-Para usuários vindos da versão antiga, existe uma migração automática: se o banco estiver vazio e houver dados antigos no `localStorage`, eles são enviados uma única vez ao PostgreSQL e as chaves antigas são removidas do navegador.
+   `pip install -r requirements.txt`
 
-## Variáveis obrigatórias
+5. Configure as variáveis:
 
-```text
-SECRET_KEY
-ADMIN_EMAIL
-ADMIN_PASSWORD
-DATABASE_URL
-```
+   - `ADMIN_EMAIL`
+   - `ADMIN_PASSWORD`
+   - `SECRET_KEY`
+   - `GEMINI_API_KEY`
+   - opcional: `GEMINI_MODEL`
+   - opcional: `LOCAL_KNOWLEDGE_DIR` (padrão no Windows: `C:\agenteIA`)
 
-Para MFA:
+6. Execute:
 
-```text
-MFA_ENABLED=true
-MFA_SETUP_ENABLED=false
-```
+   `python app.py`
 
-Configure pelo menos um provedor de IA:
+No painel, use **Ler C:\agenteIA agora** para indexar a pasta.
 
-```text
-GROQ_API_KEY
-GEMINI_API_KEY
-CLOUDFLARE_API_TOKEN
-CLOUDFLARE_ACCOUNT_ID
-```
+## Sincronizar C:\agenteIA com a versão online
 
-## DATABASE_URL do Aiven
+Na versão online configure `SYNC_TOKEN`. No seu Windows configure o mesmo token e a URL pública:
 
-Use o formato:
+- `AGENT_URL=https://seu-servico.onrender.com`
+- `SYNC_TOKEN=seu-token-secreto`
 
-```text
-postgres://avnadmin:SENHA@HOST:PORTA/BANCO?sslmode=require
-```
+Depois execute `sincronizar_agenteIA.bat` ou:
 
-Nunca grave a senha diretamente no repositório. No Render, configure a URL em **Environment → DATABASE_URL**.
+`python sync_local_knowledge.py`
 
-## Deploy no Render
+O script percorre `C:\agenteIA` e envia os arquivos compatíveis para o projeto **Conhecimento Local**.
 
-O `render.yaml` já está preparado. O build instala as dependências e o serviço inicia com:
+## Importante sobre Render
 
-```text
-gunicorn app:app
-```
+O Render não consegue acessar o disco `C:\` do seu computador diretamente. O acesso automático a `C:\agenteIA` funciona quando a aplicação está rodando no próprio PC. Para a versão online, use o sincronizador incluído.
 
-Ao iniciar, a aplicação cria automaticamente as tabelas necessárias se `DATABASE_URL` estiver configurada.
-
-Mais detalhes: consulte `DATABASE_AIVEN.md`.
-
-## Desenvolvimento local
-
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Linux/macOS
-# .venv\\Scripts\\activate  # Windows
-pip install -r requirements.txt
-cp .env.example .env
-python app.py
-```
-
-## Backup
-
-A tela de backup continua disponível. O arquivo JSON exportado agora representa os dados persistidos no PostgreSQL e pode ser restaurado pela própria interface.
+No plano sem disco persistente, os arquivos locais do serviço podem ser apagados quando a instância for recriada/reimplantada. Como a fonte principal continua sendo `C:\agenteIA`, basta executar a sincronização novamente. Para persistência contínua no servidor, configure um volume/disco persistente e aponte `DATA_DIR` para ele.

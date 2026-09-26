@@ -21,9 +21,9 @@ from openai import OpenAI
 from openpyxl import load_workbook
 from pypdf import PdfReader
 
-from database import (
-    add_chat_message, add_history, clear_chat, create_project, database_configured,
-    delete_document, delete_history, delete_project, init_database, insert_document,
+from storage import (
+    add_chat_message, add_history, clear_chat, create_project, storage_configured,
+    delete_document, delete_history, delete_project, init_storage, insert_document,
     load_state, replace_state, set_active_project, update_project,
 )
 
@@ -54,9 +54,9 @@ login_manager.login_message = "Faça login para continuar."
 login_manager.login_message_category = "warning"
 
 try:
-    init_database()
+    init_storage()
 except Exception as exc:
-    logger.exception("Não foi possível inicializar o PostgreSQL: %s", exc)
+    logger.exception("Não foi possível inicializar o armazenamento local: %s", exc)
 
 
 SYSTEM_PROMPT = """Você é Alexandre AI, o assistente pessoal de Alexandre.
@@ -347,59 +347,26 @@ def sanitize_project_context(raw_context):
 
 
 def provider_configurations():
-    providers = []
-
-    groq_key = os.getenv("GROQ_API_KEY")
-    if groq_key:
-        providers.append({
-            "name": "Groq",
-            "client": OpenAI(
-                api_key=groq_key,
-                base_url="https://api.groq.com/openai/v1",
-                timeout=35.0,
-                max_retries=0,
-            ),
-            "model": os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"),
-        })
-
     gemini_key = os.getenv("GEMINI_API_KEY")
-    if gemini_key:
-        providers.append({
-            "name": "Gemini",
-            "client": OpenAI(
-                api_key=gemini_key,
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                timeout=35.0,
-                max_retries=0,
-            ),
-            "model": os.getenv("GEMINI_MODEL", "gemini-3.8-flash"),
-        })
-
-    cloudflare_key = os.getenv("CLOUDFLARE_API_TOKEN")
-    cloudflare_account = os.getenv("CLOUDFLARE_ACCOUNT_ID")
-    if cloudflare_key and cloudflare_account:
-        providers.append({
-            "name": "Cloudflare",
-            "client": OpenAI(
-                api_key=cloudflare_key,
-                base_url=f"https://api.cloudflare.com/client/v4/accounts/{cloudflare_account}/ai/v1",
-                timeout=35.0,
-                max_retries=0,
-            ),
-            "model": os.getenv(
-                "CLOUDFLARE_MODEL",
-                "@cf/google/gemma-4-26b-a4b-it",
-            ),
-        })
-
-    return providers
+    if not gemini_key:
+        return []
+    return [{
+        "name": "Gemini",
+        "client": OpenAI(
+            api_key=gemini_key,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            timeout=45.0,
+            max_retries=1,
+        ),
+        "model": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+    }]
 
 
-def ask_with_fallback(messages):
+def ask_with_gemini(messages):
     providers = provider_configurations()
 
     if not providers:
-        raise RuntimeError("Nenhum provedor de IA está configurado.")
+        raise RuntimeError("Gemini não está configurado. Defina GEMINI_API_KEY.")
 
     failures = []
 
@@ -429,7 +396,7 @@ def ask_with_fallback(messages):
             failures.append(provider["name"])
 
     raise RuntimeError(
-        "Os provedores configurados não responderam. "
+        "O Gemini não respondeu. "
         f"Tentativas: {', '.join(failures)}."
     )
 
@@ -612,20 +579,167 @@ def _owner_id():
     return str(current_user.get_id())
 
 
-def _db_error(exc):
-    logger.exception("Erro PostgreSQL")
-    return jsonify({"error": f"Falha de persistência no PostgreSQL: {str(exc)[:180]}"}), 500
+def _storage_error(exc):
+    logger.exception("Erro de armazenamento local")
+    return jsonify({"error": f"Falha no armazenamento local: {str(exc)[:180]}"}), 500
+
+
+def _ensure_project(owner_id, name="Conhecimento Local", description="Arquivos sincronizados da pasta local do computador."):
+    state = load_state(owner_id)
+    for project in state.get("projects", []):
+        if str(project.get("name") or "").strip().lower() == name.strip().lower():
+            return project
+    return create_project(owner_id, {
+        "id": f"project_{uuid.uuid4()}",
+        "name": name,
+        "description": description,
+        "status": "Ativo",
+    })
+
+
+def _replace_source_document(owner_id, project_id, document):
+    state = load_state(owner_id)
+    source_path = str(document.get("sourcePath") or "")
+    for project in state.get("projects", []):
+        if project.get("id") != project_id:
+            continue
+        for current in list(project.get("documents") or []):
+            same_source = source_path and str(current.get("sourcePath") or "") == source_path
+            same_title = not source_path and current.get("title") == document.get("title")
+            if same_source or same_title:
+                delete_document(owner_id, current.get("id"))
+    return insert_document(owner_id, project_id, document)
+
+
+def _document_from_stream(file_obj, filename, size=0, source_path="", source_mtime=None):
+    text = extract_file_content(file_obj, filename)
+    if not text:
+        raise ValueError("O arquivo não possui texto legível para importar.")
+    chunks = split_text_chunks(text, filename)
+    document = {
+        "id": f"doc_{uuid.uuid4()}",
+        "title": filename,
+        "size": int(size or 0),
+        "characters": len(text),
+        "chunks": chunks,
+        "sourceType": "local_folder" if source_path else "uploaded_file",
+    }
+    if source_path:
+        document["sourcePath"] = source_path
+    if source_mtime is not None:
+        document["sourceMtime"] = source_mtime
+    return document
+
+
+def _configured_local_dir():
+    raw = (os.getenv("LOCAL_KNOWLEDGE_DIR") or "").strip()
+    if raw:
+        return Path(raw)
+    if os.name == "nt":
+        return Path(r"C:\agenteIA")
+    return None
+
+
+@app.route("/api/local-folder/status")
+@login_required
+def api_local_folder_status():
+    folder = _configured_local_dir()
+    available = bool(folder and folder.exists() and folder.is_dir())
+    return jsonify({
+        "configured": bool(folder),
+        "available": available,
+        "path": str(folder) if folder else "C:\\agenteIA (somente quando executado no Windows)",
+        "mode": "local" if os.name == "nt" else "cloud",
+    })
+
+
+@app.route("/api/local-folder/scan", methods=["POST"])
+@login_required
+def api_local_folder_scan():
+    folder = _configured_local_dir()
+    if not folder or not folder.exists() or not folder.is_dir():
+        return jsonify({
+            "error": "A pasta local não está disponível neste servidor. No Windows, crie C:\\agenteIA ou configure LOCAL_KNOWLEDGE_DIR."
+        }), 400
+
+    owner_id = _owner_id()
+    project = _ensure_project(owner_id)
+    success = 0
+    skipped = 0
+    failures = []
+
+    for path in sorted(folder.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            continue
+        try:
+            if path.stat().st_size > app.config["MAX_CONTENT_LENGTH"]:
+                skipped += 1
+                continue
+            relative = str(path.relative_to(folder)).replace("\\", "/")
+            with path.open("rb") as handle:
+                document = _document_from_stream(
+                    handle, relative, size=path.stat().st_size,
+                    source_path=relative, source_mtime=path.stat().st_mtime,
+                )
+            _replace_source_document(owner_id, project["id"], document)
+            success += 1
+        except Exception as exc:
+            failures.append(f"{path.name}: {str(exc)[:120]}")
+
+    return jsonify({
+        "ok": True,
+        "projectId": project["id"],
+        "projectName": project["name"],
+        "folder": str(folder),
+        "imported": success,
+        "skipped": skipped,
+        "failures": failures[:20],
+    })
+
+
+@app.route("/api/sync/local-file", methods=["POST"])
+@csrf.exempt
+def api_sync_local_file():
+    expected = (os.getenv("SYNC_TOKEN") or "").strip()
+    provided = (request.headers.get("X-Sync-Token") or "").strip()
+    if not expected or not hmac.compare_digest(expected, provided):
+        return jsonify({"error": "Token de sincronização inválido."}), 401
+
+    uploaded = request.files.get("file")
+    if not uploaded or not uploaded.filename:
+        return jsonify({"error": "Arquivo ausente."}), 400
+
+    relative_path = str(request.form.get("relativePath") or uploaded.filename).replace("\\", "/")[:1000]
+    project_name = str(request.form.get("projectName") or "Conhecimento Local")[:200]
+    source_mtime = request.form.get("sourceMtime")
+    try:
+        source_mtime = float(source_mtime) if source_mtime not in (None, "") else None
+    except ValueError:
+        source_mtime = None
+
+    try:
+        owner_id = "admin"
+        project = _ensure_project(owner_id, project_name)
+        document = _document_from_stream(
+            uploaded.stream, relative_path,
+            size=request.content_length or 0,
+            source_path=relative_path, source_mtime=source_mtime,
+        )
+        saved = _replace_source_document(owner_id, project["id"], document)
+        return jsonify({"ok": True, "projectId": project["id"], "document": saved}), 201
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return _storage_error(exc)
 
 
 @app.route("/api/state")
 @login_required
 def api_state():
-    if not database_configured():
-        return jsonify({"error": "DATABASE_URL não configurada no Render."}), 503
     try:
         return jsonify(load_state(_owner_id()))
     except Exception as exc:
-        return _db_error(exc)
+        return _storage_error(exc)
 
 
 @app.route("/api/state/import", methods=["POST"])
@@ -637,7 +751,7 @@ def api_state_import():
     except (ValueError, TypeError) as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
-        return _db_error(exc)
+        return _storage_error(exc)
 
 
 @app.route("/api/projects", methods=["POST"])
@@ -656,7 +770,7 @@ def api_projects_create():
     try:
         return jsonify(create_project(_owner_id(), project)), 201
     except Exception as exc:
-        return _db_error(exc)
+        return _storage_error(exc)
 
 
 @app.route("/api/projects/<project_id>", methods=["PUT", "DELETE"])
@@ -679,7 +793,7 @@ def api_project_item(project_id):
             return jsonify({"error": "Projeto não encontrado."}), 404
         return jsonify({"ok": True, "updatedAt": row["updated_at"].isoformat()})
     except Exception as exc:
-        return _db_error(exc)
+        return _storage_error(exc)
 
 
 @app.route("/api/settings/active-project", methods=["PUT"])
@@ -692,7 +806,7 @@ def api_active_project():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
-        return _db_error(exc)
+        return _storage_error(exc)
 
 
 @app.route("/api/projects/<project_id>/documents", methods=["POST"])
@@ -702,23 +816,18 @@ def api_project_document(project_id):
     if not uploaded or not uploaded.filename:
         return jsonify({"error": "Selecione um arquivo."}), 400
     try:
-        text = extract_file_content(uploaded.stream, uploaded.filename)
-        if not text:
-            return jsonify({"error": "O arquivo não possui texto legível para importar."}), 400
-        chunks = split_text_chunks(text, uploaded.filename)
-        document = {
-            "id": f"doc_{uuid.uuid4()}",
-            "title": uploaded.filename,
-            "size": int(request.content_length or 0),
-            "characters": len(text),
-            "chunks": chunks,
-        }
-        saved = insert_document(_owner_id(), project_id, document)
+        relative_path = str(request.form.get("relativePath") or uploaded.filename).replace("\\", "/")[:1000]
+        document = _document_from_stream(
+            uploaded.stream, relative_path,
+            size=request.content_length or 0,
+            source_path=relative_path if request.form.get("relativePath") else "",
+        )
+        saved = _replace_source_document(_owner_id(), project_id, document)
         return jsonify(saved), 201
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
-        return _db_error(exc)
+        return _storage_error(exc)
 
 
 @app.route("/api/documents/<document_id>", methods=["DELETE"])
@@ -729,7 +838,7 @@ def api_document_delete(document_id):
             return jsonify({"error": "Documento não encontrado."}), 404
         return jsonify({"ok": True})
     except Exception as exc:
-        return _db_error(exc)
+        return _storage_error(exc)
 
 
 @app.route("/api/chat", methods=["POST", "DELETE"])
@@ -751,7 +860,7 @@ def api_chat():
         })
         return jsonify({"ok": True, "id": row["id"]}), 201
     except Exception as exc:
-        return _db_error(exc)
+        return _storage_error(exc)
 
 
 @app.route("/api/history", methods=["POST", "DELETE"])
@@ -777,7 +886,7 @@ def api_history():
         add_history(_owner_id(), item)
         return jsonify(item), 201
     except Exception as exc:
-        return _db_error(exc)
+        return _storage_error(exc)
 
 
 @app.route("/api/backup/export")
@@ -786,10 +895,10 @@ def api_backup_export():
     try:
         payload = load_state(_owner_id())
         payload["version"] = 3
-        payload["storage"] = "postgresql"
+        payload["storage"] = "local-filesystem"
         return jsonify(payload)
     except Exception as exc:
-        return _db_error(exc)
+        return _storage_error(exc)
 
 
 @app.route("/api/backup/import", methods=["POST"])
@@ -801,7 +910,7 @@ def api_backup_import():
     except (ValueError, TypeError) as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
-        return _db_error(exc)
+        return _storage_error(exc)
 
 
 @app.route("/api/agent/status")
@@ -850,7 +959,7 @@ def agent():
         messages.append({"role": "user", "content": message})
 
     try:
-        result = ask_with_fallback(messages)
+        result = ask_with_gemini(messages)
         return jsonify(result)
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
@@ -861,7 +970,7 @@ def agent():
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok", "database": "configured" if database_configured() else "missing"}), 200
+    return jsonify({"status": "ok", "storage": "local-filesystem", "gemini": "configured" if os.getenv("GEMINI_API_KEY") else "missing"}), 200
 
 
 if __name__ == "__main__":

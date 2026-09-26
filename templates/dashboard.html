@@ -247,8 +247,17 @@
                     </div>
 
                     <p class="panel-description">
-                        Use arquivos ou pastas da sua própria máquina. Você escolhe o conteúdo local, o navegador envia somente os arquivos selecionados e o agente transforma esse material em conhecimento pesquisável.
+                        O agente pode usar arquivos enviados pelo navegador e, quando executado no Windows, ler automaticamente a pasta <strong>C:\agenteIA</strong>. A mesma pasta também pode ser sincronizada com a versão online usando o sincronizador incluído no projeto.
                     </p>
+
+                    <div class="local-folder-command">
+                        <div>
+                            <span class="eyebrow">PASTA AUTOMÁTICA</span>
+                            <strong id="localFolderPath">C:\agenteIA</strong>
+                            <small id="localFolderStatus">Verificando disponibilidade da pasta local...</small>
+                        </div>
+                        <button type="button" class="primary-small-btn" id="scanLocalFolderBtn">Ler C:\agenteIA agora</button>
+                    </div>
 
                     <div class="knowledge-upload-grid">
                         <label>
@@ -325,7 +334,7 @@
                     </div>
 
                     <p class="panel-description">
-                        Projetos, documentos extraídos, conversas e histórico ficam persistidos no PostgreSQL. O backup continua disponível para exportação e restauração.
+                        Projetos, documentos extraídos, conversas e histórico ficam salvos em arquivos locais do próprio Agente IA. Não há PostgreSQL. O backup completo continua disponível para exportação e restauração.
                     </p>
 
                     <div class="backup-actions">

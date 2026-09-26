@@ -528,6 +528,49 @@ $("#importLocalFileBtn")?.addEventListener("click", async () => {
     button.textContent = "Adicionar à base local";
 });
 
+
+async function loadLocalFolderStatus() {
+    const pathEl = $("#localFolderPath");
+    const statusEl = $("#localFolderStatus");
+    const button = $("#scanLocalFolderBtn");
+    if (!pathEl || !statusEl || !button) return;
+    try {
+        const response = await fetch("/api/local-folder/status");
+        const data = await response.json();
+        pathEl.textContent = data.path || "C:\\agenteIA";
+        if (data.available) {
+            statusEl.textContent = "Pasta disponível. O agente pode indexar esse conteúdo diretamente.";
+            button.disabled = false;
+        } else {
+            statusEl.textContent = data.mode === "cloud"
+                ? "Versão online: use o sincronizador local para enviar C:\\agenteIA para a rede."
+                : "Pasta ainda não encontrada. Crie C:\\agenteIA ou configure LOCAL_KNOWLEDGE_DIR.";
+            button.disabled = true;
+        }
+    } catch {
+        statusEl.textContent = "Não foi possível verificar a pasta local.";
+        button.disabled = true;
+    }
+}
+
+$("#scanLocalFolderBtn")?.addEventListener("click", async () => {
+    const button = $("#scanLocalFolderBtn");
+    const status = $("#localFolderStatus");
+    button.disabled = true;
+    button.textContent = "Analisando pasta...";
+    status.textContent = "Lendo arquivos e atualizando a base de conhecimento...";
+    try {
+        const data = await apiRequest("/api/local-folder/scan", { method: "POST" });
+        status.textContent = `${data.imported} arquivo(s) indexados em ${data.folder}.` + (data.failures?.length ? ` ${data.failures.length} falha(s).` : "");
+        await loadInitialState();
+    } catch (error) {
+        status.textContent = error.message;
+    } finally {
+        button.textContent = "Ler C:\\agenteIA agora";
+        await loadLocalFolderStatus();
+    }
+});
+
 // Documentos
 function renderKnowledgeDocuments() {
     const grid = $("#knowledgeDocumentGrid");
@@ -965,7 +1008,7 @@ $("#importBackupInput")?.addEventListener("change", async event => {
 
         await apiRequest("/api/backup/import", { method: "POST", body: JSON.stringify(data) });
         await loadInitialState();
-        $("#backupStatus").textContent = "Backup restaurado no PostgreSQL com sucesso.";
+        $("#backupStatus").textContent = "Backup restaurado no armazenamento local com sucesso.";
     } catch (error) {
         $("#backupStatus").textContent = `Erro ao importar backup: ${error.message}`;
     } finally {
@@ -1020,7 +1063,7 @@ async function loadInitialState() {
     } catch (error) {
         console.error(error);
         const status = $("#backupStatus");
-        if (status) status.textContent = `Banco indisponível: ${error.message}`;
+        if (status) status.textContent = `Armazenamento indisponível: ${error.message}`;
         renderProjectDependentUI();
         renderDefaultAssistant();
         renderHistory();
@@ -1128,3 +1171,5 @@ function initMobileBottomNav() {
 }
 
 initMobileBottomNav();
+
+loadLocalFolderStatus();
