@@ -978,6 +978,7 @@ def api_sync_heartbeat():
         "pending": int(data.get("pending") or 0),
         "synced": int(data.get("synced") or 0),
         "errors": int(data.get("errors") or 0),
+        "detectedFiles": int(data.get("detectedFiles") or 0),
     }
     app.config["LOCAL_AGENT_HEARTBEAT"] = payload
     return jsonify({"ok": True})
@@ -1189,6 +1190,7 @@ def api_knowledge_status():
             "pending": heartbeat.get("pending", 0),
             "synced": heartbeat.get("synced", 0),
             "errors": heartbeat.get("errors", 0),
+            "detectedFiles": heartbeat.get("detectedFiles", 0),
         },
     })
 

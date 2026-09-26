@@ -1,15 +1,16 @@
 """Alexandre AI Local Agent - monitora C:\\agenteIA e sincroniza automaticamente.
 
-Executa silenciosamente na bandeja do Windows. Use instalar_agente_local.py uma única vez.
+Executa silenciosamente na bandeja do Windows. Sem BAT.
+Cria um painel visível ao lado da pasta monitorada para confirmar o status local.
 """
 import json
 import os
 import queue
 import socket
-import sys
 import threading
 import time
 import webbrowser
+from html import escape
 from pathlib import Path
 
 import requests
@@ -62,6 +63,12 @@ class SyncEngine:
         self.pending = 0
         self.status = 'iniciando'
         self.icon = None
+        self.last_success = None
+        self.last_error = ''
+        self.detected_files = 0
+        # Ficam AO LADO da pasta C:\agenteIA, por exemplo em C:\
+        self.sidecar_status = self.root.parent / 'Alexandre AI - Status.html'
+        self.sidecar_open = self.root.parent / 'Alexandre AI - Abrir.url'
 
     def headers(self):
         return {'X-Sync-Token': self.token}
@@ -75,6 +82,57 @@ class SyncEngine:
     def supported(self, path):
         p = Path(path)
         return p.is_file() and p.suffix.lower() in SUPPORTED
+
+    def count_files(self):
+        try:
+            self.detected_files = sum(
+                1 for p in self.root.rglob('*')
+                if p.is_file() and p.suffix.lower() in SUPPORTED
+            )
+        except Exception:
+            self.detected_files = 0
+        return self.detected_files
+
+    def write_sidecars(self):
+        """Cria/atualiza painel e atalho visíveis ao lado da pasta monitorada."""
+        try:
+            self.root.mkdir(parents=True, exist_ok=True)
+            self.count_files()
+            self.sidecar_open.write_text(
+                '[InternetShortcut]\nURL=' + self.base_url + '\n', encoding='utf-8'
+            )
+            last = (
+                time.strftime('%d/%m/%Y %H:%M:%S', time.localtime(self.last_success))
+                if self.last_success else 'Ainda não concluída'
+            )
+            now = time.strftime('%d/%m/%Y %H:%M:%S')
+            html = f"""<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta http-equiv="refresh" content="10">
+<title>Alexandre AI - Status</title>
+<style>
+body{{font-family:Segoe UI,Arial,sans-serif;background:#090c12;color:#eaf2ff;margin:0;padding:32px}}
+.card{{max-width:760px;margin:auto;background:#111722;border:1px solid #28344a;border-radius:18px;padding:26px;box-shadow:0 18px 50px #0008}}
+h1{{margin:0 0 6px;font-size:26px}} .ok{{color:#72f1b8}} .muted{{color:#93a4bd}}
+.grid{{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:22px}}
+.box{{background:#0c111a;border:1px solid #202b3e;border-radius:12px;padding:15px}}
+b{{display:block;color:#9cb8ff;margin-bottom:5px}} .err{{margin-top:14px;background:#171018;border:1px solid #4a2742;border-radius:12px;padding:15px}}
+a{{color:#80b7ff}}
+</style></head><body><div class="card">
+<h1>Alexandre AI <span class="ok">●</span></h1><div class="muted">Monitor local do conhecimento pessoal</div>
+<div class="grid">
+<div class="box"><b>Pasta monitorada</b>{escape(str(self.root))}</div>
+<div class="box"><b>Status</b>{escape(self.status)}</div>
+<div class="box"><b>Arquivos encontrados</b>{self.detected_files}</div>
+<div class="box"><b>Pendentes</b>{self.pending}</div>
+<div class="box"><b>Última sincronização</b>{last}</div>
+<div class="box"><b>Atualizado em</b>{now}</div>
+</div><div class="err"><b>Último erro</b>{escape(self.last_error or 'Nenhum')}</div>
+<p><a href="{escape(self.base_url)}">Abrir Alexandre AI online</a></p>
+<div class="muted">Esta página atualiza automaticamente a cada 10 segundos.</div>
+</div></body></html>"""
+            self.sidecar_status.write_text(html, encoding='utf-8')
+        except Exception as exc:
+            log(f'Falha criando painel local: {exc}')
 
     def queue_sync(self, path):
         p = Path(path)
@@ -99,6 +157,7 @@ class SyncEngine:
         self.pending = self.q.qsize()
         if self.icon:
             self.icon.title = self.tooltip()
+        self.write_sidecars()
 
     def tooltip(self):
         return f'Alexandre AI - {self.status} | pendentes: {self.pending}'[:120]
@@ -122,14 +181,21 @@ class SyncEngine:
                 if r.ok:
                     self.synced += 1
                     self.status = 'sincronizado'
+                    self.last_success = time.time()
+                    self.last_error = ''
                     log(f'OK {relative}')
+                    self.write_sidecars()
                     return
+                self.last_error = f'HTTP {r.status_code} ao enviar {relative}'
                 log(f'HTTP {r.status_code} em {relative}: {r.text[:300]}')
             except Exception as exc:
+                self.last_error = f'Falha ao enviar {relative}: {exc}'
                 log(f'Falha {relative} tentativa {attempt + 1}: {exc}')
+            self.write_sidecars()
             time.sleep(2 ** attempt)
         self.errors += 1
         self.status = 'erro de sincronização'
+        self.write_sidecars()
 
     def delete_remote(self, path):
         relative = self.relative(path)
@@ -141,17 +207,23 @@ class SyncEngine:
             )
             if r.ok:
                 self.status = 'sincronizado'
+                self.last_success = time.time()
+                self.last_error = ''
                 log(f'REMOVIDO {relative}')
             else:
                 self.errors += 1
+                self.last_error = f'Erro removendo {relative}: HTTP {r.status_code}'
                 log(f'Erro removendo {relative}: HTTP {r.status_code} {r.text[:300]}')
         except Exception as exc:
             self.errors += 1
+            self.last_error = f'Falha removendo {relative}: {exc}'
             log(f'Falha removendo {relative}: {exc}')
+        self.write_sidecars()
 
     def full_sync(self):
         self.root.mkdir(parents=True, exist_ok=True)
         files = [p for p in self.root.rglob('*') if p.is_file() and p.suffix.lower() in SUPPORTED]
+        self.detected_files = len(files)
         self.status = f'sincronizando {len(files)} arquivo(s)'
         for p in files:
             self.q.put(('sync', str(p)))
@@ -176,20 +248,30 @@ class SyncEngine:
                 self.update_pending()
                 if self.q.empty() and self.status != 'erro de sincronização':
                     self.status = 'sincronizado'
+                    self.write_sidecars()
 
     def heartbeat(self):
         while not self.stop_event.is_set():
             try:
-                requests.post(
+                r = requests.post(
                     f'{self.base_url}/api/sync/heartbeat',
                     headers={**self.headers(), 'Content-Type': 'application/json'},
                     json={
                         'computer': socket.gethostname(), 'folder': str(self.root), 'status': self.status,
                         'pending': self.pending, 'synced': self.synced, 'errors': self.errors,
+                        'detectedFiles': self.count_files(),
                     }, timeout=20,
                 )
+                if r.ok:
+                    if self.status == 'iniciando':
+                        self.status = 'conectado'
+                    self.last_error = ''
+                else:
+                    self.last_error = f'Heartbeat HTTP {r.status_code}'
             except Exception as exc:
+                self.last_error = f'Servidor não respondeu: {exc}'
                 log(f'Heartbeat: {exc}')
+            self.write_sidecars()
             self.stop_event.wait(HEARTBEAT_SECONDS)
 
 
@@ -233,6 +315,7 @@ def main():
 
     engine = SyncEngine(cfg)
     engine.root.mkdir(parents=True, exist_ok=True)
+    engine.write_sidecars()
     threading.Thread(target=engine.worker, daemon=True).start()
     threading.Thread(target=engine.heartbeat, daemon=True).start()
 
@@ -247,6 +330,10 @@ def main():
     def open_folder(icon, item):
         os.startfile(str(engine.root))
 
+    def open_status(icon, item):
+        engine.write_sidecars()
+        os.startfile(str(engine.sidecar_status))
+
     def sync_now(icon, item):
         threading.Thread(target=engine.full_sync, daemon=True).start()
 
@@ -258,7 +345,8 @@ def main():
 
     menu = pystray.Menu(
         pystray.MenuItem('Abrir Alexandre AI', open_site, default=True),
-        pystray.MenuItem('Abrir C:\\agenteIA', open_folder),
+        pystray.MenuItem(r'Abrir C:\agenteIA', open_folder),
+        pystray.MenuItem('Ver status da pasta', open_status),
         pystray.MenuItem('Sincronizar agora', sync_now),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem('Sair', quit_app),
