@@ -17,14 +17,13 @@ from docx import Document
 from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
-from flask_wtf.csrf import CSRFProtect
-from openai import OpenAI
+from flask_wtf.csrf import CSRFProtect, CSRFError
 from openpyxl import load_workbook
 from pypdf import PdfReader
 
 from storage import (
     add_chat_message, add_history, clear_chat, create_project, storage_configured,
-    delete_document, delete_history, delete_project, init_storage, insert_document,
+    delete_document, delete_document_by_source, delete_history, delete_project, init_storage, insert_document,
     load_state, replace_state, set_active_project, update_project,
 )
 
@@ -246,7 +245,7 @@ def extract_pdf_with_gemini(pdf_bytes, filename="documento.pdf"):
             "Configure GEMINI_API_KEY para permitir a leitura visual do documento."
         )
 
-    model = (os.getenv("GEMINI_MODEL") or "gemini-2.5-flash").strip()
+    model = (os.getenv("GEMINI_MODEL") or "gemini-3.8-flash").strip()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     payload = {
         "contents": [{
@@ -423,59 +422,172 @@ def sanitize_project_context(raw_context):
     return normalize_text(raw_context, max_chars=52000)
 
 
+_SEARCH_STOPWORDS = {
+    "de", "da", "do", "das", "dos", "a", "o", "as", "os", "e", "em", "para", "por", "com",
+    "um", "uma", "que", "se", "no", "na", "nos", "nas", "ao", "aos", "como", "mais", "menos",
+    "sobre", "qual", "quais", "me", "meu", "minha", "meus", "minhas", "este", "esta", "esse",
+    "essa", "isso", "isto", "ser", "tem", "ter", "foi", "sao", "the", "and", "of", "to", "in",
+}
+
+
+def _search_tokens(text):
+    normalized = normalize_text(str(text or ""), max_chars=12000).lower()
+    return [token for token in re.findall(r"[a-zA-Z0-9À-ÿ]+", normalized) if len(token) >= 3 and token not in _SEARCH_STOPWORDS]
+
+
+def build_global_knowledge_context(owner_id, query, limit=12):
+    state = load_state(owner_id)
+    tokens = _search_tokens(query)
+    normalized_query = normalize_text(query, max_chars=2000).lower()
+    scored = []
+    total_documents = 0
+    total_chunks = 0
+
+    for project in state.get("projects", []):
+        for document in project.get("documents") or []:
+            total_documents += 1
+            title = str(document.get("title") or "Documento")
+            source_path = str(document.get("sourcePath") or "")
+            metadata = f"{title} {source_path}".lower()
+            chunks = document.get("chunks") or []
+            total_chunks += len(chunks)
+            for chunk in chunks:
+                text = str(chunk.get("text") or "").strip()
+                if not text:
+                    continue
+                haystack = text.lower()
+                score = 0
+                for token in tokens:
+                    score += haystack.count(token)
+                    if token in metadata:
+                        score += 4
+                if normalized_query and len(normalized_query) >= 8 and normalized_query in haystack:
+                    score += 12
+                if not tokens and text:
+                    score = 1
+                if score > 0:
+                    scored.append((score, title, source_path, text))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    selected = scored[:limit]
+    context_parts = []
+    used_documents = []
+    for _, title, source_path, text in selected:
+        label = source_path or title
+        if label not in used_documents:
+            used_documents.append(label)
+        context_parts.append(f"ARQUIVO: {label}\n{text}")
+
+    context = "\n\n---\n\n".join(context_parts)
+    context = normalize_text(context, max_chars=52000)
+    return {
+        "context": context,
+        "usedDocuments": used_documents,
+        "chunkCount": len(selected),
+        "totalDocuments": total_documents,
+        "totalChunks": total_chunks,
+    }
+
+
 def provider_configurations():
-    gemini_key = os.getenv("GEMINI_API_KEY")
+    gemini_key = (os.getenv("GEMINI_API_KEY") or "").strip()
     if not gemini_key:
         return []
     return [{
         "name": "Gemini",
-        "client": OpenAI(
-            api_key=gemini_key,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            timeout=45.0,
-            max_retries=1,
-        ),
-        "model": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+        "model": (os.getenv("GEMINI_MODEL") or "gemini-3.8-flash").strip(),
     }]
+
+
+def _gemini_error_message(response):
+    try:
+        payload = response.json()
+        error = payload.get("error") or {}
+        message = error.get("message") if isinstance(error, dict) else None
+        if message:
+            return str(message)
+    except Exception:
+        pass
+    body = (response.text or "").strip().replace("\n", " ")
+    return body[:500] or f"HTTP {response.status_code}"
 
 
 def ask_with_gemini(messages):
     providers = provider_configurations()
-
     if not providers:
         raise RuntimeError("Gemini não está configurado. Defina GEMINI_API_KEY.")
 
-    failures = []
+    provider = providers[0]
+    model = provider["model"]
+    api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+    logger.info("Tentando provedor=Gemini modelo=%s via API nativa", model)
 
-    for provider in providers:
-        try:
-            logger.info("Tentando provedor=%s modelo=%s", provider["name"], provider["model"])
+    system_parts = []
+    contents = []
+    for message in messages:
+        role = message.get("role")
+        content = str(message.get("content") or "").strip()
+        if not content:
+            continue
+        if role == "system":
+            system_parts.append(content)
+            continue
+        contents.append({
+            "role": "model" if role == "assistant" else "user",
+            "parts": [{"text": content}],
+        })
 
-            response = provider["client"].chat.completions.create(
-                model=provider["model"],
-                messages=messages,
-                temperature=0.35,
-                max_tokens=1800,
-            )
+    payload = {
+        "contents": contents,
+        "generationConfig": {
+            "temperature": 0.35,
+            "maxOutputTokens": 1800,
+        },
+    }
+    if system_parts:
+        payload["systemInstruction"] = {"parts": [{"text": "\n\n".join(system_parts)}]}
 
-            content = response.choices[0].message.content
-            if not content:
-                raise RuntimeError("Resposta vazia.")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    try:
+        response = requests.post(url, params={"key": api_key}, json=payload, timeout=60)
+    except requests.RequestException as exc:
+        logger.warning("Falha de conexão com Gemini: %s", exc)
+        raise RuntimeError(f"Falha de conexão com o Gemini: {exc}") from exc
 
-            return {
-                "reply": content.strip(),
-                "provider": provider["name"],
-                "model": provider["model"],
-            }
+    if not response.ok:
+        detail = _gemini_error_message(response)
+        logger.warning("Gemini HTTP %s: %s", response.status_code, detail[:500])
+        raise RuntimeError(f"Gemini retornou HTTP {response.status_code}: {detail}")
 
-        except Exception as exc:
-            logger.warning("Falha no provedor %s: %s", provider["name"], str(exc)[:500])
-            failures.append(provider["name"])
+    try:
+        data = response.json()
+    except ValueError as exc:
+        logger.warning("Gemini respondeu em formato não JSON: %s", (response.text or "")[:300])
+        raise RuntimeError("O Gemini respondeu em formato inválido.") from exc
 
-    raise RuntimeError(
-        "O Gemini não respondeu. "
-        f"Tentativas: {', '.join(failures)}."
-    )
+    parts = (((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [])
+    content = "\n".join(str(part.get("text") or "") for part in parts if part.get("text")).strip()
+    if not content:
+        block_reason = ((data.get("promptFeedback") or {}).get("blockReason") or "").strip()
+        if block_reason:
+            raise RuntimeError(f"O Gemini bloqueou a solicitação: {block_reason}.")
+        raise RuntimeError("O Gemini retornou uma resposta vazia.")
+
+    return {"reply": content, "provider": "Gemini", "model": model}
+
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(exc):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Sessão ou token de segurança expirado. Atualize a página e tente novamente."}), 400
+    return str(exc), 400
+
+
+@login_manager.unauthorized_handler
+def unauthorized():
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Sua sessão expirou. Faça login novamente."}), 401
+    return redirect(url_for("login"))
 
 
 @app.after_request
@@ -810,6 +922,42 @@ def api_sync_local_file():
         return _storage_error(exc)
 
 
+@app.route("/api/sync/delete", methods=["POST"])
+@csrf.exempt
+def api_sync_delete():
+    expected = (os.getenv("SYNC_TOKEN") or "").strip()
+    provided = (request.headers.get("X-Sync-Token") or "").strip()
+    if not expected or not hmac.compare_digest(expected, provided):
+        return jsonify({"error": "Token de sincronização inválido."}), 401
+    data = request.get_json(silent=True) or {}
+    relative_path = str(data.get("relativePath") or "").replace("\\", "/")[:1000]
+    if not relative_path:
+        return jsonify({"error": "relativePath ausente."}), 400
+    removed = delete_document_by_source("admin", relative_path)
+    return jsonify({"ok": True, "removed": removed, "relativePath": relative_path})
+
+
+@app.route("/api/sync/heartbeat", methods=["POST"])
+@csrf.exempt
+def api_sync_heartbeat():
+    expected = (os.getenv("SYNC_TOKEN") or "").strip()
+    provided = (request.headers.get("X-Sync-Token") or "").strip()
+    if not expected or not hmac.compare_digest(expected, provided):
+        return jsonify({"error": "Token de sincronização inválido."}), 401
+    data = request.get_json(silent=True) or {}
+    payload = {
+        "lastSeen": time.time(),
+        "computer": str(data.get("computer") or "")[:120],
+        "folder": str(data.get("folder") or r"C:\agenteIA")[:500],
+        "status": str(data.get("status") or "online")[:40],
+        "pending": int(data.get("pending") or 0),
+        "synced": int(data.get("synced") or 0),
+        "errors": int(data.get("errors") or 0),
+    }
+    app.config["LOCAL_AGENT_HEARTBEAT"] = payload
+    return jsonify({"ok": True})
+
+
 @app.route("/api/state")
 @login_required
 def api_state():
@@ -990,6 +1138,36 @@ def api_backup_import():
         return _storage_error(exc)
 
 
+@app.route("/api/knowledge/status")
+@login_required
+def api_knowledge_status():
+    state = load_state(_owner_id())
+    documents = []
+    for project in state.get("projects", []):
+        documents.extend(project.get("documents") or [])
+    synced = [doc for doc in documents if doc.get("sourceType") == "local_folder"]
+    imported_at = [str(doc.get("importedAt") or "") for doc in synced if doc.get("importedAt")]
+    heartbeat = app.config.get("LOCAL_AGENT_HEARTBEAT") or {}
+    last_seen = float(heartbeat.get("lastSeen") or 0)
+    online = bool(last_seen and (time.time() - last_seen) < 180)
+    return jsonify({
+        "documents": len(documents),
+        "chunks": sum(len(doc.get("chunks") or []) for doc in documents),
+        "syncedDocuments": len(synced),
+        "lastSync": max(imported_at) if imported_at else None,
+        "source": "C:\\agenteIA",
+        "localAgent": {
+            "online": online,
+            "lastSeen": last_seen or None,
+            "computer": heartbeat.get("computer"),
+            "folder": heartbeat.get("folder") or "C:\\agenteIA",
+            "pending": heartbeat.get("pending", 0),
+            "synced": heartbeat.get("synced", 0),
+            "errors": heartbeat.get("errors", 0),
+        },
+    })
+
+
 @app.route("/api/agent/status")
 @login_required
 def agent_status():
@@ -1000,7 +1178,6 @@ def agent_status():
 
     return jsonify({
         "configured": configured,
-        "fallback_order": [provider["provider"] for provider in configured],
         "mfa": mfa_enabled(),
     })
 
@@ -1015,7 +1192,8 @@ def agent():
         return jsonify({"error": "Digite uma mensagem."}), 400
 
     history = sanitize_history(data.get("history", []))
-    project_context = sanitize_project_context(data.get("projectContext", ""))
+    retrieval = build_global_knowledge_context(_owner_id(), message)
+    project_context = retrieval["context"]
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
@@ -1024,8 +1202,8 @@ def agent():
             "role": "system",
             "content": (
                 "CONTEXTO PRIVADO DA BASE PESSOAL:\n"
-                "Os trechos abaixo foram selecionados automaticamente entre todos os arquivos "
-                "sincronizados/importados porque parecem relevantes para a pergunta.\n\n"
+                "Os trechos abaixo foram selecionados automaticamente no servidor entre TODOS os arquivos "
+                "sincronizados/importados. A seleção de projeto não limita esta pesquisa.\n\n"
                 f"{project_context}"
             ),
         })
@@ -1037,6 +1215,12 @@ def agent():
 
     try:
         result = ask_with_gemini(messages)
+        result.update({
+            "usedDocuments": retrieval["usedDocuments"],
+            "retrievalCount": retrieval["chunkCount"],
+            "totalDocuments": retrieval["totalDocuments"],
+            "totalChunks": retrieval["totalChunks"],
+        })
         return jsonify(result)
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503

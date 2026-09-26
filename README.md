@@ -58,3 +58,28 @@ No plano sem disco persistente, os arquivos locais do serviço podem ser apagado
 ## PDFs escaneados, diplomas e certificados
 
 A V4 detecta automaticamente PDFs que não possuem texto pesquisável. Nesses casos, o próprio Gemini faz a leitura visual do PDF e o conteúdo reconhecido é indexado na base de conhecimento. Isso permite consultar diplomas, certificados digitalizados e outros documentos que sejam essencialmente imagens.
+
+## V7 — Agente Local automático no Windows
+
+A sincronização manual por BAT foi removida. A V7 inclui um monitor residente que observa `C:\agenteIA` e sincroniza automaticamente com a versão online.
+
+### Instalação única no computador
+
+1. Tenha Python 3 instalado no Windows.
+2. No Render, crie/mantenha `SYNC_TOKEN` com um valor forte.
+3. Execute `instalar_agente_local.py` uma única vez.
+4. Informe a URL do site e o mesmo `SYNC_TOKEN` do Render.
+5. O agente passa a iniciar automaticamente com o Windows e aparece na bandeja do sistema.
+
+Depois disso, basta copiar, alterar ou remover arquivos em `C:\agenteIA`. Não é necessário executar BAT ou clicar em importar.
+
+### Menu da bandeja
+
+- Abrir Alexandre AI
+- Abrir `C:\agenteIA`
+- Sincronizar agora
+- Sair
+
+### Formatos monitorados
+
+PDF, DOCX, XLSX/XLSM, TXT, MD, CSV, JSON, LOG, XML e HTML.

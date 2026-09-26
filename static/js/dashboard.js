@@ -26,9 +26,20 @@ async function apiRequest(url, options = {}) {
         headers["X-CSRFToken"] = csrfToken;
     }
     const response = await fetch(url, { ...options, headers });
+    const contentType = response.headers.get("content-type") || "";
+    const raw = await response.text();
     let data = {};
-    try { data = await response.json(); } catch { data = {}; }
-    if (!response.ok) throw new Error(data.error || `Erro HTTP ${response.status}`);
+    if (raw && contentType.includes("application/json")) {
+        try { data = JSON.parse(raw); } catch { data = {}; }
+    }
+    if (!response.ok) {
+        const detail = data.error || (raw && !raw.trim().startsWith("<") ? raw.slice(0, 300) : "");
+        throw new Error(detail || `Erro HTTP ${response.status}. Consulte os logs do Render.`);
+    }
+    if (raw && !contentType.includes("application/json")) {
+        console.error("Resposta não JSON recebida de", url, raw.slice(0, 500));
+        throw new Error("O servidor respondeu em formato inesperado. Atualize a página; se persistir, consulte os logs do Render.");
+    }
     return data;
 }
 
@@ -774,12 +785,29 @@ function loadChat() {
     history.forEach(item => appendMessage(item.text, item.type, false, item.provider || "", item.documents || []));
 }
 
+async function loadKnowledgeStatus() {
+    try {
+        const data = await apiRequest("/api/knowledge/status");
+        const status = $("#contextStatus");
+        if (!status) return;
+        if (!data.documents) {
+            status.textContent = "Nenhum documento sincronizado ainda. O Agente Local sincronizará C:\\agenteIA automaticamente.";
+            return;
+        }
+        const syncText = data.lastSync ? ` · última sincronização ${formatDate(data.lastSync)}` : "";
+        const monitor = data.localAgent || {};
+        const monitorText = monitor.online ? " · Agente Local online" : " · Agente Local offline";
+        status.textContent = `${data.documents} documento(s) · ${data.chunks} trecho(s) disponíveis${syncText}${monitorText}. Busca global automática ativa.`;
+    } catch (error) {
+        console.warn("Não foi possível atualizar o status da base:", error);
+    }
+}
+
 async function loadAgentStatus() {
     const status = $("#agentStatus");
     try {
-        const response = await fetch("/api/agent/status");
-        const data = await response.json();
-        if (!response.ok || !data.configured?.length) {
+        const data = await apiRequest("/api/agent/status");
+        if (!data.configured?.length) {
             status.innerHTML = "<i></i> IA não configurada";
             $("#sidebarAiChain").textContent = "IA não configurada";
             return;
@@ -801,44 +829,49 @@ async function sendMessage(text) {
     if (chatSendBtn) chatSendBtn.disabled = true;
     if (chatInput) chatInput.disabled = true;
 
-    const retrieval = buildGlobalKnowledgeContext(message);
     appendMessage(message, "user");
     chatInput.value = "";
     chatInput.style.height = "auto";
 
     const indicator = $("#retrievalIndicator");
     indicator?.classList.add("retrieval-active");
-    indicator.querySelector("strong").textContent = `Busca global concluída: ${retrieval.chunkCount} trecho(s) relevante(s)`;
-    indicator.querySelector("small").textContent = retrieval.usedDocuments.length
-        ? `Arquivos consultados: ${retrieval.usedDocuments.join(", ")}`
-        : `A base possui ${retrieval.totalDocuments} documento(s), mas nenhum trecho relevante foi encontrado para esta pergunta.`;
+    if (indicator) {
+        indicator.querySelector("strong").textContent = "Pesquisando toda a base pessoal...";
+        indicator.querySelector("small").textContent = "Consultando automaticamente todos os arquivos sincronizados e importados.";
+    }
 
     const history = getChatHistory().slice(-16).map(item => ({
         role: item.type === "assistant" ? "assistant" : "user",
         content: item.text,
     }));
 
-    startThinkingActivity(true, retrieval.usedDocuments.length);
+    startThinkingActivity(true, 0);
     addThinkingBubble();
 
     try {
-        const response = await fetch("/api/agent", {
+        const data = await apiRequest("/api/agent", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken },
-            body: JSON.stringify({ message, history, projectContext: retrieval.context }),
+            body: JSON.stringify({ message, history }),
         });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Não foi possível enviar a mensagem.");
+
+        const usedDocuments = Array.isArray(data.usedDocuments) ? data.usedDocuments : [];
+        if (indicator) {
+            indicator.querySelector("strong").textContent = `Busca global concluída: ${data.retrievalCount || 0} trecho(s) relevante(s)`;
+            indicator.querySelector("small").textContent = usedDocuments.length
+                ? `Arquivos usados: ${usedDocuments.join(", ")}`
+                : `A base possui ${data.totalDocuments || 0} documento(s), mas nenhum trecho relevante foi encontrado para esta pergunta.`;
+        }
 
         removeThinkingBubble();
         const providerLabel = `${data.provider} · ${data.model}`;
-        appendMessage(data.reply, "assistant", true, providerLabel, retrieval.usedDocuments, true);
-        addSearchHistory(message, "", providerLabel, retrieval.usedDocuments);
+        appendMessage(data.reply, "assistant", true, providerLabel, usedDocuments, true);
+        await addSearchHistory(message, "", providerLabel, usedDocuments);
         stopThinkingActivity(`Resposta concluída via ${data.provider}.`);
+        loadKnowledgeStatus();
     } catch (error) {
         removeThinkingBubble();
         appendMessage(`Erro: ${error.message}`, "assistant");
-        addSearchHistory(message, "", "Erro", retrieval.usedDocuments);
+        await addSearchHistory(message, "", "Erro", []);
         stopThinkingActivity("Não foi possível concluir a resposta.");
     } finally {
         chatBusy = false;
@@ -1051,6 +1084,7 @@ async function loadInitialState() {
 
 loadInitialState();
 loadAgentStatus();
+loadKnowledgeStatus();
 
 
 function startDashboardMatrixRain() {
@@ -1152,3 +1186,5 @@ function initMobileBottomNav() {
 initMobileBottomNav();
 
 loadLocalFolderStatus();
+
+setInterval(() => { if (!document.hidden) loadKnowledgeStatus(); }, 30000);

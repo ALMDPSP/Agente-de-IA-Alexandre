@@ -156,6 +156,30 @@ def delete_document(owner_id, document_id):
         return found
 
 
+
+def delete_document_by_source(owner_id, source_path):
+    source_path = str(source_path or '').replace('\\', '/').strip()
+    if not source_path:
+        return 0
+    with _LOCK:
+        state = _load(owner_id)
+        removed = 0
+        for project in state['projects']:
+            docs = project.get('documents') or []
+            new_docs = []
+            for doc in docs:
+                current = str(doc.get('sourcePath') or '').replace('\\', '/').strip()
+                if current == source_path:
+                    removed += 1
+                else:
+                    new_docs.append(doc)
+            if len(new_docs) != len(docs):
+                project['documents'] = new_docs
+                project['updatedAt'] = _now_iso()
+        if removed:
+            _save(owner_id, state)
+        return removed
+
 def add_chat_message(owner_id, item):
     with _LOCK:
         state = _load(owner_id)
