@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+import uuid
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -218,3 +219,57 @@ def delete_history(owner_id, history_id=None):
         else:
             state['searchHistory'] = []
         _save(owner_id, state)
+
+
+def _actions_path(owner_id):
+    safe = ''.join(ch for ch in str(owner_id) if ch.isalnum() or ch in ('-', '_')) or 'admin'
+    return _data_dir() / f'local_actions_{safe}.json'
+
+
+def _load_actions(owner_id):
+    path = _actions_path(owner_id)
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _save_actions(owner_id, actions):
+    init_storage()
+    path = _actions_path(owner_id)
+    tmp = path.with_suffix('.tmp')
+    tmp.write_text(json.dumps(actions[-500:], ensure_ascii=False, indent=2), encoding='utf-8')
+    tmp.replace(path)
+
+
+def queue_local_action(owner_id, action):
+    if not isinstance(action, dict):
+        raise ValueError('Ação local inválida.')
+    with _LOCK:
+        actions = _load_actions(owner_id)
+        item = deepcopy(action)
+        item['id'] = item.get('id') or f"local_{uuid.uuid4()}"
+        item['createdAt'] = item.get('createdAt') or _now_iso()
+        actions.append(item)
+        _save_actions(owner_id, actions)
+        return deepcopy(item)
+
+
+def list_local_actions(owner_id, limit=50):
+    with _LOCK:
+        return deepcopy(_load_actions(owner_id)[:max(1, int(limit or 50))])
+
+
+def ack_local_actions(owner_id, action_ids):
+    ids = {str(x) for x in (action_ids or []) if x}
+    if not ids:
+        return 0
+    with _LOCK:
+        actions = _load_actions(owner_id)
+        before = len(actions)
+        actions = [a for a in actions if str(a.get('id')) not in ids]
+        _save_actions(owner_id, actions)
+        return before - len(actions)

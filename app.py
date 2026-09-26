@@ -25,6 +25,7 @@ from storage import (
     add_chat_message, add_history, clear_chat, create_project, storage_configured,
     delete_document, delete_document_by_source, delete_history, delete_project, init_storage, insert_document,
     load_state, replace_state, set_active_project, update_project,
+    queue_local_action, list_local_actions, ack_local_actions,
 )
 
 load_dotenv()
@@ -979,9 +980,34 @@ def api_sync_heartbeat():
         "synced": int(data.get("synced") or 0),
         "errors": int(data.get("errors") or 0),
         "detectedFiles": int(data.get("detectedFiles") or 0),
+        "folderAccess": bool(data.get("folderAccess")),
     }
     app.config["LOCAL_AGENT_HEARTBEAT"] = payload
     return jsonify({"ok": True})
+
+
+
+@app.route("/api/sync/commands", methods=["GET"])
+@csrf.exempt
+def api_sync_commands():
+    expected = (os.getenv("SYNC_TOKEN") or "").strip()
+    provided = (request.headers.get("X-Sync-Token") or "").strip()
+    if not expected or not hmac.compare_digest(expected, provided):
+        return jsonify({"error": "Token de sincronização inválido."}), 401
+    actions = list_local_actions("admin", limit=50)
+    return jsonify({"ok": True, "commands": actions})
+
+
+@app.route("/api/sync/commands/ack", methods=["POST"])
+@csrf.exempt
+def api_sync_commands_ack():
+    expected = (os.getenv("SYNC_TOKEN") or "").strip()
+    provided = (request.headers.get("X-Sync-Token") or "").strip()
+    if not expected or not hmac.compare_digest(expected, provided):
+        return jsonify({"error": "Token de sincronização inválido."}), 401
+    data = request.get_json(silent=True) or {}
+    removed = ack_local_actions("admin", data.get("ids") or [])
+    return jsonify({"ok": True, "acked": removed})
 
 
 @app.route("/api/state")
@@ -1019,7 +1045,19 @@ def api_projects_create():
         "status": str(data.get("status") or "Planejamento")[:100],
     }
     try:
-        return jsonify(create_project(_owner_id(), project)), 201
+        saved = create_project(_owner_id(), project)
+        queue_local_action(_owner_id(), {
+            "type": "upsert_project",
+            "project": {
+                "id": saved.get("id"),
+                "name": saved.get("name"),
+                "description": saved.get("description", ""),
+                "status": saved.get("status", "Planejamento"),
+                "createdAt": saved.get("createdAt"),
+                "updatedAt": saved.get("updatedAt"),
+            }
+        })
+        return jsonify(saved), 201
     except Exception as exc:
         return _storage_error(exc)
 
@@ -1028,20 +1066,35 @@ def api_projects_create():
 @login_required
 def api_project_item(project_id):
     try:
+        state = load_state(_owner_id())
+        existing = next((p for p in state.get("projects", []) if p.get("id") == project_id), None)
         if request.method == "DELETE":
+            if not existing:
+                return jsonify({"error": "Projeto não encontrado."}), 404
             delete_project(_owner_id(), project_id)
+            queue_local_action(_owner_id(), {
+                "type": "archive_project",
+                "project": {"id": project_id, "name": existing.get("name", "Projeto")},
+            })
             return jsonify({"ok": True})
         data = request.get_json(silent=True) or {}
         name = str(data.get("name") or "").strip()
         if not name:
             return jsonify({"error": "Informe o nome do projeto."}), 400
-        row = update_project(_owner_id(), project_id, {
+        old_name = str((existing or {}).get("name") or "")
+        fields = {
             "name": name[:200],
             "description": str(data.get("description") or "")[:10000],
             "status": str(data.get("status") or "Planejamento")[:100],
-        })
+        }
+        row = update_project(_owner_id(), project_id, fields)
         if not row:
             return jsonify({"error": "Projeto não encontrado."}), 404
+        queue_local_action(_owner_id(), {
+            "type": "upsert_project",
+            "oldName": old_name,
+            "project": {"id": project_id, **fields, "updatedAt": row["updated_at"].isoformat()},
+        })
         return jsonify({"ok": True, "updatedAt": row["updated_at"].isoformat()})
     except Exception as exc:
         return _storage_error(exc)
@@ -1191,6 +1244,8 @@ def api_knowledge_status():
             "synced": heartbeat.get("synced", 0),
             "errors": heartbeat.get("errors", 0),
             "detectedFiles": heartbeat.get("detectedFiles", 0),
+            "folderAccess": bool(heartbeat.get("folderAccess")),
+            "status": heartbeat.get("status"),
         },
     })
 

@@ -57,3 +57,7 @@ PDF, DOCX, XLSX, XLS, TXT, CSV, JSON, Markdown, HTML, XML e LOG.
 ## Fluxo
 
 `C:\agenteIA` → `AlexandreAI.exe` → Render → base pessoal → busca global → Gemini.
+
+## V7.4 — integração com C:\agenteIA
+
+A V7.4 adiciona sincronização bidirecional de estrutura: o Agente Local valida acesso real à pasta, cria as categorias padrão e recebe do site instruções para criar/renomear/arquivar pastas de projetos. Consulte `README_V7_4.md`.

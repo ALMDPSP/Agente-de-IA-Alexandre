@@ -859,14 +859,16 @@ async function loadKnowledgeStatus() {
         const data = await apiRequest("/api/knowledge/status");
         const status = $("#contextStatus");
         if (!status) return;
+        const monitor = data.localAgent || {};
+        const monitorText = monitor.online ? "Agente Local online" : "Agente Local offline";
+        const accessText = monitor.online ? (monitor.folderAccess ? "acesso à pasta OK" : "sem confirmação de acesso à pasta") : "aguardando conexão local";
+        const detectedText = monitor.online ? ` · ${monitor.detectedFiles || 0} arquivo(s) detectado(s) no PC` : "";
         if (!data.documents) {
-            status.textContent = "Nenhum documento sincronizado ainda. O Agente Local sincronizará C:\\agenteIA automaticamente.";
+            status.textContent = `Nenhum documento sincronizado ainda · ${monitorText} · ${accessText}${detectedText}. Pasta esperada: ${monitor.folder || "C:\\agenteIA"}.`;
             return;
         }
         const syncText = data.lastSync ? ` · última sincronização ${formatDate(data.lastSync)}` : "";
-        const monitor = data.localAgent || {};
-        const monitorText = monitor.online ? " · Agente Local online" : " · Agente Local offline";
-        status.textContent = `${data.documents} documento(s) · ${data.chunks} trecho(s) disponíveis${syncText}${monitorText}. Busca global automática ativa.`;
+        status.textContent = `${data.documents} documento(s) · ${data.chunks} trecho(s) disponíveis${syncText} · ${monitorText} · ${accessText}${detectedText}. Busca global automática ativa.`;
     } catch (error) {
         console.warn("Não foi possível atualizar o status da base:", error);
     }

@@ -1,0 +1,631 @@
+package main
+
+import (
+	"bytes"
+	_ "embed"
+	"encoding/json"
+	"fmt"
+	"html/template"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+)
+
+type Config struct {
+	AgentURL  string `json:"agent_url"`
+	SyncToken string `json:"sync_token"`
+	Root      string `json:"root"`
+}
+
+type FileState struct {
+	Size  int64
+	Mtime int64
+}
+
+type Status struct {
+	State         string
+	LastSync      time.Time
+	LastError     string
+	DetectedFiles int
+	Synced        int
+	Errors        int
+	Pending       int
+	Computer      string
+	FolderAccess  bool
+}
+
+var (
+	cfg       Config
+	st        = Status{State: "iniciando"}
+	stMu      sync.RWMutex
+	snapshot  = map[string]FileState{}
+	snapMu    sync.Mutex
+	syncNow   = make(chan struct{}, 1)
+	supported = map[string]bool{
+		".pdf": true, ".docx": true, ".xlsx": true, ".xls": true, ".txt": true,
+		".csv": true, ".json": true, ".md": true, ".html": true, ".htm": true,
+		".xml": true, ".log": true,
+	}
+	defaultFolders = []string{"Documentos", "Trabalho", "Projetos", "Manuais", "Anotacoes"}
+)
+
+//go:embed AlexandreAI.ico
+var iconBytes []byte
+
+func localAppDir() string {
+	base := os.Getenv("LOCALAPPDATA")
+	if base == "" {
+		base = os.TempDir()
+	}
+	return filepath.Join(base, "AlexandreAI")
+}
+func configPath() string   { return filepath.Join(localAppDir(), "config.json") }
+func installedExe() string { return filepath.Join(localAppDir(), "AlexandreAI.exe") }
+func logPath() string      { return filepath.Join(localAppDir(), "AlexandreAI.log") }
+func iconPath() string     { return filepath.Join(localAppDir(), "AlexandreAI.ico") }
+
+func logf(format string, args ...any) {
+	_ = os.MkdirAll(localAppDir(), 0755)
+	f, err := os.OpenFile(logPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "%s "+format+"\r\n", append([]any{time.Now().Format("2006-01-02 15:04:05")}, args...)...)
+}
+
+func loadConfig() bool {
+	b, err := os.ReadFile(configPath())
+	if err != nil {
+		return false
+	}
+	if json.Unmarshal(b, &cfg) != nil {
+		return false
+	}
+	if cfg.Root == "" {
+		cfg.Root = `C:\agenteIA`
+	}
+	cfg.AgentURL = strings.TrimRight(strings.TrimSpace(cfg.AgentURL), "/")
+	return cfg.AgentURL != "" && cfg.SyncToken != ""
+}
+
+func saveConfig(c Config) error {
+	c.AgentURL = strings.TrimRight(strings.TrimSpace(c.AgentURL), "/")
+	if c.Root == "" {
+		c.Root = `C:\agenteIA`
+	}
+	if c.AgentURL == "" || c.SyncToken == "" {
+		return fmt.Errorf("URL e SYNC_TOKEN são obrigatórios")
+	}
+	_ = os.MkdirAll(localAppDir(), 0755)
+	b, _ := json.MarshalIndent(c, "", "  ")
+	if err := os.WriteFile(configPath(), b, 0600); err != nil {
+		return err
+	}
+	cfg = c
+	return nil
+}
+
+func stopInstalledAgentIfUpdating() {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	if strings.EqualFold(filepath.Clean(exe), filepath.Clean(installedExe())) {
+		return
+	}
+	target := strings.ReplaceAll(installedExe(), "'", "''")
+	script := fmt.Sprintf(`Get-Process AlexandreAI -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq '%s' } | Stop-Process -Force -ErrorAction SilentlyContinue`, target)
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script)
+	cmd.SysProcAttr = hideWindowAttr()
+	_ = cmd.Run()
+	time.Sleep(700 * time.Millisecond)
+}
+
+func installSelf() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	_ = os.MkdirAll(localAppDir(), 0755)
+	if len(iconBytes) > 0 {
+		_ = os.WriteFile(iconPath(), iconBytes, 0644)
+	}
+	if !strings.EqualFold(filepath.Clean(exe), filepath.Clean(installedExe())) {
+		in, err := os.Open(exe)
+		if err != nil {
+			return err
+		}
+		defer in.Close()
+		out, err := os.Create(installedExe())
+		if err != nil {
+			return err
+		}
+		if _, err = io.Copy(out, in); err != nil {
+			out.Close()
+			return err
+		}
+		out.Close()
+	}
+	cmd := exec.Command("reg", "add", `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, "/v", "AlexandreAI", "/t", "REG_SZ", "/d", `"`+installedExe()+`"`, "/f")
+	cmd.SysProcAttr = hideWindowAttr()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	createWindowsShortcuts()
+	return nil
+}
+
+func createWindowsShortcuts() {
+	desktop := filepath.Join(os.Getenv("USERPROFILE"), "Desktop", "Alexandre AI.lnk")
+	startMenu := filepath.Join(os.Getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Alexandre AI.lnk")
+	for _, link := range []string{desktop, startMenu} {
+		script := fmt.Sprintf(`$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('%s'); $s.TargetPath='%s'; $s.WorkingDirectory='%s'; $s.IconLocation='%s,0'; $s.Description='Alexandre AI - Agente Local'; $s.Save()`, strings.ReplaceAll(link, "'", "''"), strings.ReplaceAll(installedExe(), "'", "''"), strings.ReplaceAll(localAppDir(), "'", "''"), strings.ReplaceAll(iconPath(), "'", "''"))
+		cmd := exec.Command("powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script)
+		cmd.SysProcAttr = hideWindowAttr()
+		_ = cmd.Run()
+	}
+}
+
+func openBrowser(target string) {
+	if runtime.GOOS == "windows" {
+		cmd := exec.Command("rundll32", "url.dll,FileProtocolHandler", target)
+		cmd.SysProcAttr = hideWindowAttr()
+		_ = cmd.Start()
+	}
+}
+
+func sidecarStatusPath() string { return `C:\Alexandre AI - Status.html` }
+func sidecarOpenPath() string   { return `C:\Alexandre AI - Abrir.url` }
+
+func writeSidecars() {
+	stMu.RLock()
+	s := st
+	stMu.RUnlock()
+	root := cfg.Root
+	if root == "" {
+		root = `C:\agenteIA`
+	}
+	_ = os.MkdirAll(root, 0755)
+	statusURL := "http://127.0.0.1:8765/status"
+	openURL := cfg.AgentURL
+	if openURL == "" {
+		openURL = "https://agente-de-ia-alexandre.onrender.com"
+	}
+	_ = os.WriteFile(sidecarOpenPath(), []byte("[InternetShortcut]\r\nURL="+openURL+"\r\n"), 0644)
+	errText := template.HTMLEscapeString(s.LastError)
+	last := "Nunca"
+	if !s.LastSync.IsZero() {
+		last = s.LastSync.Format("02/01/2006 15:04:05")
+	}
+	html := fmt.Sprintf(`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="10"><title>Alexandre AI - Status</title><style>body{font-family:Segoe UI,Arial;background:#07111f;color:#e8f0ff;padding:28px}.card{max-width:760px;margin:auto;background:#0d1b2a;border:1px solid #1f3852;border-radius:18px;padding:24px;box-shadow:0 18px 60px #0008}.ok{color:#62e6a6}.warn{color:#ffcf70}.bad{color:#ff7b8b}.row{padding:10px 0;border-bottom:1px solid #17314a}a{color:#73c6ff}.btn{display:inline-block;padding:10px 14px;border-radius:10px;background:#123c5e;text-decoration:none;margin-right:8px}.muted{color:#8da3b8;font-size:13px}</style></head><body><div class="card"><h2>Alexandre AI · Pasta Pessoal</h2><div class="row"><b>Status:</b> %s</div><div class="row"><b>Pasta:</b> %s</div><div class="row"><b>Acesso leitura/gravação:</b> %t</div><div class="row"><b>Arquivos detectados:</b> %d</div><div class="row"><b>Arquivos sincronizados nesta execução:</b> %d</div><div class="row"><b>Última sincronização:</b> %s</div><div class="row"><b>Último erro:</b> %s</div><p><a class="btn" href="%s">Abrir painel local</a><a class="btn" href="%s">Abrir Alexandre AI</a></p><div class="muted">Atualiza automaticamente a cada 10 segundos. Não requer Python.</div></div></body></html>`, template.HTMLEscapeString(s.State), template.HTMLEscapeString(root), s.FolderAccess, s.DetectedFiles, s.Synced, last, errText, statusURL, openURL)
+	_ = os.WriteFile(sidecarStatusPath(), []byte(html), 0644)
+}
+
+func updateStatus(fn func(*Status)) { stMu.Lock(); fn(&st); stMu.Unlock(); writeSidecars() }
+
+func sanitizeFolderName(name string) string {
+	name = strings.TrimSpace(name)
+	invalid := `<>:"/\\|?*`
+	name = strings.Map(func(r rune) rune {
+		if strings.ContainsRune(invalid, r) || r < 32 {
+			return '_'
+		}
+		return r
+	}, name)
+	name = strings.Trim(name, " .")
+	if name == "" {
+		name = "Projeto"
+	}
+	if len([]rune(name)) > 100 {
+		name = string([]rune(name)[:100])
+	}
+	return name
+}
+
+func ensureFolderStructure() error {
+	if cfg.Root == "" {
+		cfg.Root = `C:\agenteIA`
+	}
+	if err := os.MkdirAll(cfg.Root, 0755); err != nil {
+		return err
+	}
+	for _, name := range defaultFolders {
+		if err := os.MkdirAll(filepath.Join(cfg.Root, name), 0755); err != nil {
+			return err
+		}
+	}
+	_ = os.MkdirAll(filepath.Join(cfg.Root, "Projetos", "_Arquivados"), 0755)
+	probe := filepath.Join(cfg.Root, ".alexandreai_access.tmp")
+	if err := os.WriteFile(probe, []byte(time.Now().Format(time.RFC3339)), 0644); err != nil {
+		return err
+	}
+	if _, err := os.ReadFile(probe); err != nil {
+		return err
+	}
+	_ = os.Remove(probe)
+	readme := filepath.Join(cfg.Root, "LEIA-ME - Alexandre AI.txt")
+	if _, err := os.Stat(readme); os.IsNotExist(err) {
+		_ = os.WriteFile(readme, []byte("ALEXANDRE AI - BASE PESSOAL\r\n\r\nTudo que for salvo nesta pasta e nas subpastas Documentos, Trabalho, Projetos, Manuais e Anotacoes sera monitorado pelo Agente Local.\r\n\r\nProjetos criados no site serao gravados automaticamente em C:\\agenteIA\\Projetos.\r\n"), 0644)
+	}
+	updateStatus(func(s *Status) { s.FolderAccess = true; s.LastError = "" })
+	return nil
+}
+
+func projectNameForPath(rel string) string {
+	clean := filepath.ToSlash(filepath.Clean(rel))
+	parts := strings.Split(clean, "/")
+	if len(parts) >= 2 && strings.EqualFold(parts[0], "Projetos") && parts[1] != "" && parts[1] != "_Arquivados" {
+		return parts[1]
+	}
+	if len(parts) >= 1 {
+		for _, folder := range defaultFolders {
+			if strings.EqualFold(parts[0], folder) {
+				return folder
+			}
+		}
+	}
+	return "Conhecimento Local"
+}
+
+func writeProjectMetadata(project map[string]any, oldName string) error {
+	name := sanitizeFolderName(fmt.Sprint(project["name"]))
+	projectsRoot := filepath.Join(cfg.Root, "Projetos")
+	_ = os.MkdirAll(projectsRoot, 0755)
+	target := filepath.Join(projectsRoot, name)
+	if strings.TrimSpace(oldName) != "" {
+		old := filepath.Join(projectsRoot, sanitizeFolderName(oldName))
+		if !strings.EqualFold(old, target) {
+			if _, err := os.Stat(old); err == nil {
+				_ = os.Rename(old, target)
+			}
+		}
+	}
+	if err := os.MkdirAll(target, 0755); err != nil {
+		return err
+	}
+	b, _ := json.MarshalIndent(project, "", "  ")
+	return os.WriteFile(filepath.Join(target, "projeto.json"), b, 0644)
+}
+
+func archiveProject(project map[string]any) error {
+	name := sanitizeFolderName(fmt.Sprint(project["name"]))
+	src := filepath.Join(cfg.Root, "Projetos", name)
+	if _, err := os.Stat(src); err != nil {
+		return nil
+	}
+	dstRoot := filepath.Join(cfg.Root, "Projetos", "_Arquivados")
+	_ = os.MkdirAll(dstRoot, 0755)
+	dst := filepath.Join(dstRoot, name+"_"+time.Now().Format("20060102_150405"))
+	return os.Rename(src, dst)
+}
+
+func fetchCommands() {
+	req, _ := http.NewRequest("GET", cfg.AgentURL+"/api/sync/commands", nil)
+	req.Header.Set("X-Sync-Token", cfg.SyncToken)
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return
+	}
+	var payload struct {
+		Commands []map[string]any `json:"commands"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&payload) != nil {
+		return
+	}
+	ack := []string{}
+	for _, cmd := range payload.Commands {
+		typ := fmt.Sprint(cmd["type"])
+		var err error
+		switch typ {
+		case "ensure_structure":
+			err = ensureFolderStructure()
+		case "upsert_project":
+			project, _ := cmd["project"].(map[string]any)
+			err = writeProjectMetadata(project, fmt.Sprint(cmd["oldName"]))
+		case "archive_project":
+			project, _ := cmd["project"].(map[string]any)
+			err = archiveProject(project)
+		default:
+			err = nil
+		}
+		if err == nil {
+			if id := fmt.Sprint(cmd["id"]); id != "" {
+				ack = append(ack, id)
+			}
+		} else {
+			logf("COMANDO %s ERRO: %v", typ, err)
+		}
+	}
+	if len(ack) > 0 {
+		b, _ := json.Marshal(map[string]any{"ids": ack})
+		req, _ := http.NewRequest("POST", cfg.AgentURL+"/api/sync/commands/ack", bytes.NewReader(b))
+		req.Header.Set("X-Sync-Token", cfg.SyncToken)
+		req.Header.Set("Content-Type", "application/json")
+		if r, e := (&http.Client{Timeout: 20 * time.Second}).Do(req); e == nil {
+			io.Copy(io.Discard, r.Body)
+			r.Body.Close()
+		}
+	}
+}
+
+func scanFiles() map[string]FileState {
+	out := map[string]FileState{}
+	root := cfg.Root
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || info.IsDir() {
+			return nil
+		}
+		if !supported[strings.ToLower(filepath.Ext(path))] {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil
+		}
+		out[filepath.Clean(rel)] = FileState{Size: info.Size(), Mtime: info.ModTime().UnixNano()}
+		return nil
+	})
+	return out
+}
+
+func uploadFile(rel string) error {
+	path := filepath.Join(cfg.Root, rel)
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	_ = mw.WriteField("relativePath", filepath.ToSlash(rel))
+	_ = mw.WriteField("projectName", projectNameForPath(rel))
+	if info, e := f.Stat(); e == nil {
+		_ = mw.WriteField("sourceMtime", fmt.Sprintf("%f", float64(info.ModTime().UnixNano())/1e9))
+	}
+	part, err := mw.CreateFormFile("file", filepath.ToSlash(rel))
+	if err != nil {
+		return err
+	}
+	if _, err = io.Copy(part, f); err != nil {
+		return err
+	}
+	_ = mw.Close()
+	req, _ := http.NewRequest("POST", cfg.AgentURL+"/api/sync/local-file", &body)
+	req.Header.Set("X-Sync-Token", cfg.SyncToken)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	cli := &http.Client{Timeout: 4 * time.Minute}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	updateStatus(func(s *Status) { s.Synced++; s.LastSync = time.Now(); s.LastError = ""; s.State = "sincronizado" })
+	logf("OK %s", rel)
+	return nil
+}
+
+func deleteRemote(rel string) error {
+	payload, _ := json.Marshal(map[string]string{"relativePath": filepath.ToSlash(rel)})
+	req, _ := http.NewRequest("POST", cfg.AgentURL+"/api/sync/delete", bytes.NewReader(payload))
+	req.Header.Set("X-Sync-Token", cfg.SyncToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	updateStatus(func(s *Status) { s.LastSync = time.Now(); s.LastError = ""; s.State = "sincronizado" })
+	logf("REMOVIDO %s", rel)
+	return nil
+}
+
+func syncChanges(force bool) {
+	current := scanFiles()
+	updateStatus(func(s *Status) { s.DetectedFiles = len(current); s.State = "verificando pasta" })
+	snapMu.Lock()
+	old := snapshot
+	snapshot = current
+	snapMu.Unlock()
+	changed := []string{}
+	deleted := []string{}
+	for rel, fs := range current {
+		prev, ok := old[rel]
+		if force || !ok || prev != fs {
+			changed = append(changed, rel)
+		}
+	}
+	for rel := range old {
+		if _, ok := current[rel]; !ok {
+			deleted = append(deleted, rel)
+		}
+	}
+	sort.Strings(changed)
+	sort.Strings(deleted)
+	if len(changed) == 0 && len(deleted) == 0 {
+		updateStatus(func(s *Status) { s.State = "sincronizado" })
+		return
+	}
+	updateStatus(func(s *Status) {
+		s.Pending = len(changed) + len(deleted)
+		s.State = fmt.Sprintf("sincronizando %d alteração(ões)", s.Pending)
+	})
+	for _, rel := range changed {
+		var last error
+		for attempt := 0; attempt < 3; attempt++ {
+			if last = uploadFile(rel); last == nil {
+				break
+			}
+			time.Sleep(time.Duration(1<<attempt) * time.Second)
+		}
+		if last != nil {
+			updateStatus(func(s *Status) {
+				s.Errors++
+				s.LastError = "Falha em " + rel + ": " + last.Error()
+				s.State = "erro de sincronização"
+			})
+			logf("ERRO %s: %v", rel, last)
+		}
+		updateStatus(func(s *Status) {
+			if s.Pending > 0 {
+				s.Pending--
+			}
+		})
+	}
+	for _, rel := range deleted {
+		if err := deleteRemote(rel); err != nil {
+			updateStatus(func(s *Status) {
+				s.Errors++
+				s.LastError = "Falha removendo " + rel + ": " + err.Error()
+				s.State = "erro de sincronização"
+			})
+		}
+		updateStatus(func(s *Status) {
+			if s.Pending > 0 {
+				s.Pending--
+			}
+		})
+	}
+}
+
+func heartbeat() {
+	host, _ := os.Hostname()
+	for {
+		stMu.RLock()
+		s := st
+		stMu.RUnlock()
+		payload, _ := json.Marshal(map[string]any{"computer": host, "folder": cfg.Root, "status": s.State, "pending": s.Pending, "synced": s.Synced, "errors": s.Errors, "detectedFiles": s.DetectedFiles, "folderAccess": s.FolderAccess})
+		req, _ := http.NewRequest("POST", cfg.AgentURL+"/api/sync/heartbeat", bytes.NewReader(payload))
+		req.Header.Set("X-Sync-Token", cfg.SyncToken)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+		if err != nil {
+			updateStatus(func(s *Status) { s.LastError = "Servidor não respondeu: " + err.Error() })
+		} else {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				if s.State == "iniciando" {
+					updateStatus(func(s *Status) { s.State = "conectado" })
+				}
+			}
+		}
+		time.Sleep(20 * time.Second)
+	}
+}
+
+func configPage(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		_ = r.ParseForm()
+		c := Config{AgentURL: r.FormValue("url"), SyncToken: r.FormValue("token"), Root: r.FormValue("root")}
+		if err := saveConfig(c); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		if err := ensureFolderStructure(); err != nil {
+			http.Error(w, "Sem acesso à pasta: "+err.Error(), 500)
+			return
+		}
+		_ = installSelf()
+		fmt.Fprint(w, `<html><body style="font-family:Segoe UI;background:#07111f;color:white;padding:40px"><h2>Alexandre AI configurado</h2><p>A pasta pessoal está conectada e a sincronização automática foi ativada.</p><p>Pode fechar esta janela.</p></body></html>`)
+		go func() { time.Sleep(500 * time.Millisecond); syncNow <- struct{}{} }()
+		return
+	}
+	fmt.Fprint(w, `<!doctype html><html><head><meta charset="utf-8"><title>Configurar Alexandre AI</title><style>body{font-family:Segoe UI;background:#07111f;color:#eaf2ff;padding:30px}.card{max-width:680px;margin:auto;background:#0d1b2a;padding:26px;border-radius:18px;border:1px solid #1c3853}input{width:100%;padding:12px;margin:7px 0 16px;border-radius:9px;border:1px solid #294c69;background:#081521;color:white;box-sizing:border-box}button{padding:12px 18px;border:0;border-radius:10px;background:#1769aa;color:white;font-weight:600}</style></head><body><div class="card"><h2>Alexandre AI · Conectar pasta pessoal</h2><form method="post"><label>URL do agente</label><input name="url" value="https://agente-de-ia-alexandre.onrender.com"><label>Pasta pessoal</label><input name="root" value="C:\agenteIA"><label>SYNC_TOKEN do Render</label><input type="password" name="token" required><button type="submit">Conectar pasta e ativar sincronização</button></form><p>Não requer Python nem BAT.</p></div></body></html>`)
+}
+
+func statusPage(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/sync" {
+		select {
+		case syncNow <- struct{}{}:
+		default:
+		}
+		http.Redirect(w, r, "/status", 302)
+		return
+	}
+	stMu.RLock()
+	s := st
+	stMu.RUnlock()
+	last := "Nunca"
+	if !s.LastSync.IsZero() {
+		last = s.LastSync.Format("02/01/2006 15:04:05")
+	}
+	fmt.Fprintf(w, `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="10"><title>Alexandre AI Status</title><style>body{font-family:Segoe UI;background:#07111f;color:#eaf2ff;padding:30px}.card{max-width:760px;margin:auto;background:#0d1b2a;padding:26px;border-radius:18px;border:1px solid #1c3853}.row{padding:10px 0;border-bottom:1px solid #17314a}a{display:inline-block;background:#143f60;color:white;padding:10px 14px;border-radius:9px;text-decoration:none;margin-top:16px}</style></head><body><div class="card"><h2>Alexandre AI · Status local</h2><div class="row"><b>Status:</b> %s</div><div class="row"><b>Pasta:</b> %s</div><div class="row"><b>Acesso leitura/gravação:</b> %t</div><div class="row"><b>Arquivos:</b> %d</div><div class="row"><b>Última sincronização:</b> %s</div><div class="row"><b>Erro:</b> %s</div><a href="/sync">Sincronizar agora</a> <a href="%s">Abrir Alexandre AI</a></div></body></html>`, template.HTMLEscapeString(s.State), template.HTMLEscapeString(cfg.Root), s.FolderAccess, s.DetectedFiles, last, template.HTMLEscapeString(s.LastError), template.HTMLEscapeString(cfg.AgentURL))
+}
+
+func runLocalServer(configMode bool) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/status", statusPage)
+	mux.HandleFunc("/sync", statusPage)
+	if configMode {
+		mux.HandleFunc("/", configPage)
+	} else {
+		mux.HandleFunc("/", statusPage)
+	}
+	srv := &http.Server{Addr: "127.0.0.1:8765", Handler: mux}
+	go func() { _ = srv.ListenAndServe() }()
+}
+
+func main() {
+	_ = os.MkdirAll(localAppDir(), 0755)
+	stopInstalledAgentIfUpdating()
+	if !loadConfig() {
+		cfg = Config{AgentURL: "https://agente-de-ia-alexandre.onrender.com", Root: `C:\agenteIA`}
+		runLocalServer(true)
+		openBrowser("http://127.0.0.1:8765/")
+		for {
+			if loadConfig() {
+				break
+			}
+			time.Sleep(time.Second)
+		}
+	} else {
+		runLocalServer(false)
+	}
+	if err := ensureFolderStructure(); err != nil {
+		updateStatus(func(s *Status) {
+			s.FolderAccess = false
+			s.LastError = "Sem acesso a " + cfg.Root + ": " + err.Error()
+			s.State = "erro de acesso à pasta"
+		})
+	}
+	_ = installSelf()
+	writeSidecars()
+	go heartbeat()
+	go func() {
+		for {
+			fetchCommands()
+			time.Sleep(5 * time.Second)
+		}
+	}()
+	go func() {
+		for range syncNow {
+			syncChanges(true)
+		}
+	}()
+	syncChanges(true)
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		syncChanges(false)
+	}
+}
