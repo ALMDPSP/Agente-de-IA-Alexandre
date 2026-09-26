@@ -1,3 +1,7 @@
+# Alexandre AI — V7.1
+
+**Atualização:** tratamento automático de alta demanda/limite do Gemini (HTTP 503/429) com exponential backoff e status no chat.
+
 # Alexandre AI — Gemini + Conhecimento Local
 
 Agente pessoal em Flask com login/MFA, chat dinâmico, base de conhecimento por arquivos e **Gemini como único provedor de IA**.

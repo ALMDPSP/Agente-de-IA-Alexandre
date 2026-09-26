@@ -74,6 +74,17 @@ Se o contexto for insuficiente, diga o que falta.
 PREAUTH_TTL_SECONDS = 300
 MAX_MFA_ATTEMPTS = 5
 
+
+class GeminiHTTPError(RuntimeError):
+    """Erro HTTP do Gemini preservando status e indicação de retry."""
+    def __init__(self, status_code, detail, retry_after=None):
+        self.status_code = int(status_code)
+        self.detail = str(detail)
+        self.retry_after = retry_after
+        self.retryable = self.status_code in {429, 503}
+        super().__init__(f"Gemini retornou HTTP {self.status_code}: {self.detail}")
+
+
 SUPPORTED_TEXT_EXTENSIONS = {
     ".txt", ".md", ".csv", ".json", ".log", ".xml", ".html", ".htm",
 }
@@ -512,6 +523,16 @@ def _gemini_error_message(response):
     return body[:500] or f"HTTP {response.status_code}"
 
 
+def _retry_after_seconds(response):
+    value = (response.headers.get("Retry-After") or "").strip()
+    if not value:
+        return None
+    try:
+        return max(0, min(int(float(value)), 120))
+    except (TypeError, ValueError):
+        return None
+
+
 def ask_with_gemini(messages):
     providers = provider_configurations()
     if not providers:
@@ -557,7 +578,11 @@ def ask_with_gemini(messages):
     if not response.ok:
         detail = _gemini_error_message(response)
         logger.warning("Gemini HTTP %s: %s", response.status_code, detail[:500])
-        raise RuntimeError(f"Gemini retornou HTTP {response.status_code}: {detail}")
+        raise GeminiHTTPError(
+            response.status_code,
+            detail,
+            retry_after=_retry_after_seconds(response),
+        )
 
     try:
         data = response.json()
@@ -1222,8 +1247,17 @@ def agent():
             "totalChunks": retrieval["totalChunks"],
         })
         return jsonify(result)
+    except GeminiHTTPError as exc:
+        payload = {
+            "error": str(exc),
+            "geminiStatus": exc.status_code,
+            "retryable": exc.retryable,
+        }
+        if exc.retry_after is not None:
+            payload["retryAfter"] = exc.retry_after
+        return jsonify(payload), exc.status_code
     except RuntimeError as exc:
-        return jsonify({"error": str(exc)}), 503
+        return jsonify({"error": str(exc), "retryable": False}), 503
     except Exception:
         logger.exception("Erro inesperado no Agente IA")
         return jsonify({"error": "Erro interno ao processar a solicitação."}), 500

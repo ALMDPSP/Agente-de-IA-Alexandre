@@ -34,7 +34,12 @@ async function apiRequest(url, options = {}) {
     }
     if (!response.ok) {
         const detail = data.error || (raw && !raw.trim().startsWith("<") ? raw.slice(0, 300) : "");
-        throw new Error(detail || `Erro HTTP ${response.status}. Consulte os logs do Render.`);
+        const error = new Error(detail || `Erro HTTP ${response.status}. Consulte os logs do Render.`);
+        error.status = response.status;
+        error.data = data;
+        error.retryable = Boolean(data.retryable) || response.status === 429 || response.status === 503;
+        error.retryAfter = Number(data.retryAfter || 0) || 0;
+        throw error;
     }
     if (raw && !contentType.includes("application/json")) {
         console.error("Resposta não JSON recebida de", url, raw.slice(0, 500));
@@ -717,6 +722,70 @@ function removeThinkingBubble() {
     $("#activeThinkingBubble")?.remove();
 }
 
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function updateThinkingBubbleStatus(label, detail = "") {
+    const bubble = $("#activeThinkingBubble");
+    if (!bubble) return;
+    const labelEl = bubble.querySelector(".thinking-label");
+    if (labelEl) labelEl.textContent = label;
+    bubble.title = detail || label;
+    scrollChat();
+}
+
+function transientGeminiMessage(status) {
+    if (status === 429) return "Limite temporário do Gemini atingido";
+    if (status === 503) return "Gemini está com alta demanda";
+    return "Gemini temporariamente indisponível";
+}
+
+async function requestAgentWithRetry(payload, maxAttempts = 4) {
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+            if (attempt > 1) {
+                setAiActivity(
+                    "thinking",
+                    `Tentativa ${attempt}/${maxAttempts} no Gemini`,
+                    "Reenviando automaticamente sua pergunta sem perder o contexto."
+                );
+                updateThinkingBubbleStatus(`Tentando novamente ${attempt}/${maxAttempts}`);
+            }
+
+            const data = await apiRequest("/api/agent", {
+                method: "POST",
+                body: JSON.stringify(payload),
+            });
+            data.retryAttempts = attempt;
+            return data;
+        } catch (error) {
+            lastError = error;
+            const retryable = error.retryable && (error.status === 429 || error.status === 503);
+            if (!retryable || attempt >= maxAttempts) throw error;
+
+            // 1s, 2s, 4s (ou Retry-After informado pelo Gemini, limitado).
+            const exponentialSeconds = Math.pow(2, attempt - 1);
+            const waitSeconds = Math.max(1, Math.min(error.retryAfter || exponentialSeconds, 30));
+            const reason = transientGeminiMessage(error.status);
+
+            for (let remaining = waitSeconds; remaining > 0; remaining -= 1) {
+                setAiActivity(
+                    "retry",
+                    `${reason} — tentativa ${attempt + 1}/${maxAttempts}`,
+                    `Nova tentativa automática em ${remaining}s. Sua pergunta continua na fila.`
+                );
+                updateThinkingBubbleStatus(`Aguardando Gemini · ${remaining}s`, `${reason}. Nova tentativa automática.`);
+                await sleep(1000);
+            }
+        }
+    }
+
+    throw lastError || new Error("Não foi possível consultar o Gemini.");
+}
+
 function appendMessage(text, type, persist = true, provider = "", documents = [], animate = false) {
     const wrapper = document.createElement("div");
     wrapper.className = `message ${type === "user" ? "user-message" : "assistant-message"}`;
@@ -849,10 +918,7 @@ async function sendMessage(text) {
     addThinkingBubble();
 
     try {
-        const data = await apiRequest("/api/agent", {
-            method: "POST",
-            body: JSON.stringify({ message, history }),
-        });
+        const data = await requestAgentWithRetry({ message, history }, 4);
 
         const usedDocuments = Array.isArray(data.usedDocuments) ? data.usedDocuments : [];
         if (indicator) {
@@ -866,13 +932,21 @@ async function sendMessage(text) {
         const providerLabel = `${data.provider} · ${data.model}`;
         appendMessage(data.reply, "assistant", true, providerLabel, usedDocuments, true);
         await addSearchHistory(message, "", providerLabel, usedDocuments);
-        stopThinkingActivity(`Resposta concluída via ${data.provider}.`);
+        const retryNote = data.retryAttempts > 1 ? ` após ${data.retryAttempts} tentativas` : "";
+        stopThinkingActivity(`Resposta concluída via ${data.provider}${retryNote}.`);
         loadKnowledgeStatus();
     } catch (error) {
         removeThinkingBubble();
-        appendMessage(`Erro: ${error.message}`, "assistant");
+        if (error.status === 429 || error.status === 503) {
+            appendMessage(
+                `${transientGeminiMessage(error.status)}. Fiz 4 tentativas automáticas, mas o serviço continua indisponível no momento. Tente novamente em alguns instantes.`,
+                "assistant"
+            );
+        } else {
+            appendMessage(`Erro: ${error.message}`, "assistant");
+        }
         await addSearchHistory(message, "", "Erro", []);
-        stopThinkingActivity("Não foi possível concluir a resposta.");
+        stopThinkingActivity("Não foi possível concluir a resposta após as tentativas automáticas.");
     } finally {
         chatBusy = false;
         chatSendBtn?.classList.remove("is-loading");
