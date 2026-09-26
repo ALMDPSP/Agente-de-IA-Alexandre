@@ -53,3 +53,8 @@ O script percorre `C:\agenteIA` e envia os arquivos compatíveis para o projeto 
 O Render não consegue acessar o disco `C:\` do seu computador diretamente. O acesso automático a `C:\agenteIA` funciona quando a aplicação está rodando no próprio PC. Para a versão online, use o sincronizador incluído.
 
 No plano sem disco persistente, os arquivos locais do serviço podem ser apagados quando a instância for recriada/reimplantada. Como a fonte principal continua sendo `C:\agenteIA`, basta executar a sincronização novamente. Para persistência contínua no servidor, configure um volume/disco persistente e aponte `DATA_DIR` para ele.
+
+
+## PDFs escaneados, diplomas e certificados
+
+A V4 detecta automaticamente PDFs que não possuem texto pesquisável. Nesses casos, o próprio Gemini faz a leitura visual do PDF e o conteúdo reconhecido é indexado na base de conhecimento. Isso permite consultar diplomas, certificados digitalizados e outros documentos que sejam essencialmente imagens.

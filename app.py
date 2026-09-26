@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pyotp
 import qrcode
+import requests
 from docx import Document
 from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
@@ -235,14 +236,89 @@ def split_text_chunks(text, filename, chunk_size=2400, overlap=350):
     return chunks[:180]
 
 
-def extract_pdf(file_obj):
-    reader = PdfReader(file_obj)
+def extract_pdf_with_gemini(pdf_bytes, filename="documento.pdf"):
+    """Fallback visual para PDFs escaneados/imagem usando somente Gemini."""
+    api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+    if not api_key:
+        raise ValueError(
+            "O PDF parece ser escaneado e não possui texto pesquisável. "
+            "Configure GEMINI_API_KEY para permitir a leitura visual do documento."
+        )
+
+    model = (os.getenv("GEMINI_MODEL") or "gemini-2.5-flash").strip()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    payload = {
+        "contents": [{
+            "role": "user",
+            "parts": [
+                {
+                    "text": (
+                        "Leia visualmente este PDF como um documento privado do usuário. "
+                        "Transcreva todo o texto legível com fidelidade, preservando nomes, "
+                        "instituições, curso, datas, títulos, números e demais informações relevantes. "
+                        "Não resuma e não invente nada. Se houver um diploma ou certificado, "
+                        "registre explicitamente o nome da pessoa, o curso/formação, a instituição "
+                        "e a data quando estiverem visíveis. Documento: " + filename
+                    )
+                },
+                {
+                    "inlineData": {
+                        "mimeType": "application/pdf",
+                        "data": base64.b64encode(pdf_bytes).decode("ascii"),
+                    }
+                },
+            ],
+        }],
+        "generationConfig": {
+            "temperature": 0.0,
+            "maxOutputTokens": 8192,
+        },
+    }
+
+    response = requests.post(
+        url,
+        params={"key": api_key},
+        json=payload,
+        timeout=90,
+    )
+    if not response.ok:
+        detail = response.text[:500]
+        raise ValueError(f"Falha na leitura visual do PDF pelo Gemini ({response.status_code}): {detail}")
+
+    data = response.json()
+    parts = (((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [])
+    text = "\n".join(part.get("text", "") for part in parts if isinstance(part, dict))
+    text = normalize_text(text)
+    if not text:
+        raise ValueError("O Gemini não conseguiu identificar texto legível neste PDF.")
+    return "[Leitura visual do PDF pelo Gemini]\n" + text
+
+
+def extract_pdf(file_obj, filename="documento.pdf"):
+    # Lê os bytes uma única vez para permitir extração tradicional + fallback visual.
+    pdf_bytes = file_obj.read()
+    if not pdf_bytes:
+        return ""
+
     parts = []
-    for idx, page in enumerate(reader.pages[:100], start=1):
-        text = page.extract_text() or ""
-        if text.strip():
-            parts.append(f"[Página {idx}]\n{text}")
-    return normalize_text("\n\n".join(parts))
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        for idx, page in enumerate(reader.pages[:100], start=1):
+            text = page.extract_text() or ""
+            if text.strip():
+                parts.append(f"[Página {idx}]\n{text}")
+    except Exception as exc:
+        logger.warning("Falha na extração textual do PDF %s: %s", filename, str(exc)[:300])
+
+    extracted = normalize_text("\n\n".join(parts))
+
+    # Diplomas, certificados e documentos digitalizados costumam ser apenas imagens.
+    # Se quase nenhum texto foi encontrado, o próprio Gemini faz a leitura visual.
+    if len(extracted.strip()) < 120:
+        logger.info("PDF sem texto pesquisável suficiente; acionando leitura visual Gemini: %s", filename)
+        return extract_pdf_with_gemini(pdf_bytes, filename)
+
+    return extracted
 
 
 def extract_docx(file_obj):
@@ -299,7 +375,7 @@ def extract_file_content(file_obj, filename):
         )
 
     if suffix == ".pdf":
-        return extract_pdf(file_obj)
+        return extract_pdf(file_obj, filename)
     if suffix == ".docx":
         return extract_docx(file_obj)
     if suffix in {".xlsx", ".xlsm"}:
