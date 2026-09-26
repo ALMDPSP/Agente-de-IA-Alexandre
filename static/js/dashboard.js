@@ -412,27 +412,61 @@ function updateContextStatus() {
 }
 
 // Upload conhecimento
+let selectedKnowledgeFiles = [];
+const ALLOWED_LOCAL_EXTENSIONS = new Set(["pdf","docx","xlsx","xlsm","txt","md","csv","json","xml","html","htm","log"]);
+
+function mergeSelectedFiles(files) {
+    const map = new Map(selectedKnowledgeFiles.map(file => [`${file.name}:${file.size}:${file.lastModified}`, file]));
+    for (const file of files) {
+        const ext = (file.name.split(".").pop() || "").toLowerCase();
+        if (!ALLOWED_LOCAL_EXTENSIONS.has(ext)) continue;
+        map.set(`${file.name}:${file.size}:${file.lastModified}`, file);
+    }
+    selectedKnowledgeFiles = [...map.values()];
+    renderSelectedFilesPreview();
+}
+
 function renderSelectedFilesPreview() {
     const container = $("#selectedFilesPreview");
-    const files = [...($("#localFileInput")?.files || [])];
-
     if (!container) return;
-
     container.innerHTML = "";
 
-    files.forEach(file => {
+    if (!selectedKnowledgeFiles.length) {
+        container.innerHTML = '<span class="selected-files-empty">Nenhum arquivo local selecionado.</span>';
+        return;
+    }
+
+    selectedKnowledgeFiles.forEach((file, index) => {
         const tag = document.createElement("span");
         tag.className = "selected-file-tag";
-        tag.textContent = `${file.name} · ${humanSize(file.size)}`;
+        const relative = file.webkitRelativePath || file.name;
+        tag.innerHTML = `<span>${escapeText(relative)} · ${humanSize(file.size)}</span><button type="button" aria-label="Remover arquivo">×</button>`;
+        tag.querySelector("button").addEventListener("click", () => {
+            selectedKnowledgeFiles.splice(index, 1);
+            renderSelectedFilesPreview();
+        });
         container.appendChild(tag);
     });
 }
 
-$("#localFileInput")?.addEventListener("change", renderSelectedFilesPreview);
+$("#localFileInput")?.addEventListener("change", event => mergeSelectedFiles([...(event.target.files || [])]));
+$("#localFolderInput")?.addEventListener("change", event => mergeSelectedFiles([...(event.target.files || [])]));
+
+const localDropZone = $("#localDropZone");
+["dragenter", "dragover"].forEach(name => localDropZone?.addEventListener(name, event => {
+    event.preventDefault();
+    localDropZone.classList.add("is-dragging");
+}));
+["dragleave", "drop"].forEach(name => localDropZone?.addEventListener(name, event => {
+    event.preventDefault();
+    localDropZone.classList.remove("is-dragging");
+}));
+localDropZone?.addEventListener("drop", event => mergeSelectedFiles([...(event.dataTransfer?.files || [])]));
 
 async function importSingleFile(file, projectId) {
     const formData = new FormData();
     formData.append("file", file);
+    if (file.webkitRelativePath) formData.append("relativePath", file.webkitRelativePath);
     const data = await apiRequest(`/api/projects/${encodeURIComponent(projectId)}/documents`, {
         method: "POST",
         body: formData,
@@ -446,7 +480,7 @@ async function importSingleFile(file, projectId) {
 
 $("#importLocalFileBtn")?.addEventListener("click", async () => {
     const projectId = $("#fileProjectSelect")?.value;
-    const files = [...($("#localFileInput")?.files || [])];
+    const files = [...selectedKnowledgeFiles];
     const status = $("#fileImportStatus");
     const button = $("#importLocalFileBtn");
 
@@ -454,12 +488,10 @@ $("#importLocalFileBtn")?.addEventListener("click", async () => {
         status.textContent = "Selecione um projeto de destino.";
         return;
     }
-
     if (!files.length) {
-        status.textContent = "Selecione pelo menos um arquivo.";
+        status.textContent = "Selecione arquivos ou uma pasta da sua máquina.";
         return;
     }
-
     const tooLarge = files.find(file => file.size > 15 * 1024 * 1024);
     if (tooLarge) {
         status.textContent = `${tooLarge.name} ultrapassa o limite de 15 MB.`;
@@ -467,12 +499,13 @@ $("#importLocalFileBtn")?.addEventListener("click", async () => {
     }
 
     button.disabled = true;
+    button.textContent = "Lendo arquivos locais...";
     let success = 0;
     const errors = [];
 
     for (const [index, file] of files.entries()) {
-        status.textContent = `Importando ${index + 1}/${files.length}: ${file.name}...`;
-
+        const relative = file.webkitRelativePath || file.name;
+        status.textContent = `Analisando ${index + 1}/${files.length}: ${relative}...`;
         try {
             await importSingleFile(file, projectId);
             success += 1;
@@ -482,17 +515,17 @@ $("#importLocalFileBtn")?.addEventListener("click", async () => {
     }
 
     renderProjectDependentUI();
-
-    $("#localFileInput").value = "";
+    selectedKnowledgeFiles = [];
+    if ($("#localFileInput")) $("#localFileInput").value = "";
+    if ($("#localFolderInput")) $("#localFolderInput").value = "";
     renderSelectedFilesPreview();
 
-    if (errors.length) {
-        status.textContent = `${success} arquivo(s) importado(s). Falhas: ${errors.join(" | ")}`;
-    } else {
-        status.textContent = `${success} arquivo(s) importado(s) com sucesso. A IA já pode consultar esse conteúdo.`;
-    }
+    status.textContent = errors.length
+        ? `${success} arquivo(s) adicionados. Falhas: ${errors.join(" | ")}`
+        : `${success} arquivo(s) locais adicionados com sucesso. A IA já pode consultar esse conteúdo.`;
 
     button.disabled = false;
+    button.textContent = "Adicionar à base local";
 });
 
 // Documentos
@@ -580,8 +613,69 @@ $("#knowledgeSearch")?.addEventListener("input", renderKnowledgeDocuments);
 // Chat
 const chatWindow = $("#chatWindow");
 const chatInput = $("#chatInput");
+const chatSendBtn = $("#chatSendBtn");
+let chatBusy = false;
+let thinkingTimer = null;
+let thinkingStartedAt = 0;
 
-function appendMessage(text, type, persist = true, provider = "", documents = []) {
+function scrollChat() {
+    if (chatWindow) chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function setAiActivity(mode, title, detail = "") {
+    const strip = $("#aiActivityStrip");
+    const titleEl = $("#aiActivityTitle");
+    const detailEl = $("#aiActivityDetail");
+    if (!strip || !titleEl || !detailEl) return;
+    strip.dataset.mode = mode;
+    titleEl.textContent = title;
+    detailEl.textContent = detail;
+}
+
+function startThinkingActivity(hasProject, documentCount) {
+    thinkingStartedAt = Date.now();
+    setAiActivity(
+        "thinking",
+        "Alexandre AI está pensando",
+        hasProject ? `Analisando contexto e ${documentCount} arquivo(s) relevante(s)...` : "Interpretando sua pergunta e preparando a resposta..."
+    );
+    clearInterval(thinkingTimer);
+    thinkingTimer = setInterval(() => {
+        const seconds = Math.floor((Date.now() - thinkingStartedAt) / 1000);
+        const elapsed = $("#aiElapsed");
+        if (elapsed) elapsed.textContent = `${seconds}s`;
+        if (seconds >= 3 && seconds < 7) setAiActivity("thinking", "Consultando conhecimento", "Buscando os trechos mais úteis para responder com contexto.");
+        if (seconds >= 7) setAiActivity("thinking", "Gerando resposta", "Organizando a resposta final para você.");
+    }, 500);
+}
+
+function stopThinkingActivity(detail = "Resposta concluída") {
+    clearInterval(thinkingTimer);
+    thinkingTimer = null;
+    const elapsed = $("#aiElapsed");
+    if (elapsed) elapsed.textContent = "";
+    setAiActivity("ready", "Agente pronto", detail);
+}
+
+function addThinkingBubble() {
+    const wrapper = document.createElement("div");
+    wrapper.className = "message assistant-message thinking-message";
+    wrapper.id = "activeThinkingBubble";
+    wrapper.innerHTML = `
+        <div class="message-avatar ai-avatar-live">AI</div>
+        <div class="message-bubble thinking-bubble">
+            <span class="thinking-label">Pensando</span>
+            <span class="thinking-dots"><i></i><i></i><i></i></span>
+        </div>`;
+    chatWindow.appendChild(wrapper);
+    scrollChat();
+}
+
+function removeThinkingBubble() {
+    $("#activeThinkingBubble")?.remove();
+}
+
+function appendMessage(text, type, persist = true, provider = "", documents = [], animate = false) {
     const wrapper = document.createElement("div");
     wrapper.className = `message ${type === "user" ? "user-message" : "assistant-message"}`;
 
@@ -593,24 +687,36 @@ function appendMessage(text, type, persist = true, provider = "", documents = []
     bubble.className = "message-bubble";
 
     const textEl = document.createElement("div");
-    textEl.textContent = text;
+    textEl.className = "message-text";
     bubble.appendChild(textEl);
+
+    if (!animate) textEl.textContent = text;
 
     if (type === "assistant" && (provider || documents.length)) {
         const meta = document.createElement("small");
         meta.className = "message-meta";
-
         const parts = [];
         if (provider) parts.push(`via ${provider}`);
         if (documents.length) parts.push(`fontes: ${documents.join(", ")}`);
-
         meta.textContent = parts.join(" · ");
         bubble.appendChild(meta);
     }
 
     wrapper.append(avatar, bubble);
     chatWindow.appendChild(wrapper);
-    chatWindow.scrollTop = chatWindow.scrollHeight;
+    scrollChat();
+
+    if (animate) {
+        const chars = [...text];
+        const step = Math.max(1, Math.ceil(chars.length / 220));
+        let cursor = 0;
+        const timer = setInterval(() => {
+            cursor = Math.min(chars.length, cursor + step);
+            textEl.textContent = chars.slice(0, cursor).join("");
+            scrollChat();
+            if (cursor >= chars.length) clearInterval(timer);
+        }, 12);
+    }
 
     if (persist) {
         const item = { text, type, provider, documents, ts: Date.now() };
@@ -624,7 +730,7 @@ function appendMessage(text, type, persist = true, provider = "", documents = []
 function renderDefaultAssistant() {
     chatWindow.innerHTML = "";
     appendMessage(
-        "Olá. Selecione um projeto ativo e envie documentos. Quando você fizer uma pergunta, vou procurar automaticamente os trechos mais relevantes nesses arquivos.",
+        "Olá, Alexandre. Escolha um projeto e adicione arquivos ou uma pasta da sua máquina. Eu vou localizar os trechos relevantes e mostrar quando estiver analisando antes de responder.",
         "assistant",
         false
     );
@@ -632,38 +738,21 @@ function renderDefaultAssistant() {
 
 function loadChat() {
     const history = getChatHistory();
-
-    if (!history.length) {
-        renderDefaultAssistant();
-        return;
-    }
-
+    if (!history.length) return renderDefaultAssistant();
     chatWindow.innerHTML = "";
-
-    history.forEach(item => {
-        appendMessage(
-            item.text,
-            item.type,
-            false,
-            item.provider || "",
-            item.documents || []
-        );
-    });
+    history.forEach(item => appendMessage(item.text, item.type, false, item.provider || "", item.documents || []));
 }
 
 async function loadAgentStatus() {
     const status = $("#agentStatus");
-
     try {
         const response = await fetch("/api/agent/status");
         const data = await response.json();
-
         if (!response.ok || !data.configured?.length) {
             status.innerHTML = "<i></i> IA não configurada";
             $("#sidebarAiChain").textContent = "IA não configurada";
             return;
         }
-
         const names = data.configured.map(item => item.provider).join(" → ");
         status.innerHTML = `<i></i> ${escapeText(names)}`;
         $("#sidebarAiChain").textContent = names;
@@ -675,17 +764,19 @@ async function loadAgentStatus() {
 
 async function sendMessage(text) {
     const message = text.trim();
-    if (!message) return;
+    if (!message || chatBusy) return;
+    chatBusy = true;
+    chatSendBtn?.classList.add("is-loading");
+    if (chatSendBtn) chatSendBtn.disabled = true;
+    if (chatInput) chatInput.disabled = true;
 
     const projectId = $("#activeProjectSelect")?.value || "";
     const retrieval = buildProjectContext(projectId, message);
-
     appendMessage(message, "user");
     chatInput.value = "";
     chatInput.style.height = "auto";
 
     const indicator = $("#retrievalIndicator");
-
     if (projectId) {
         indicator?.classList.add("retrieval-active");
         indicator.querySelector("strong").textContent = `Contexto preparado: ${retrieval.chunkCount} trecho(s) relevante(s)`;
@@ -699,66 +790,48 @@ async function sendMessage(text) {
         content: item.text,
     }));
 
+    startThinkingActivity(Boolean(projectId), retrieval.usedDocuments.length);
+    addThinkingBubble();
+
     try {
         const response = await fetch("/api/agent", {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-CSRFToken": csrfToken,
-            },
-            body: JSON.stringify({
-                message,
-                history,
-                projectContext: retrieval.context,
-            }),
+            headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken },
+            body: JSON.stringify({ message, history, projectContext: retrieval.context }),
         });
-
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Não foi possível enviar a mensagem.");
 
+        removeThinkingBubble();
         const providerLabel = `${data.provider} · ${data.model}`;
-
-        appendMessage(
-            data.reply,
-            "assistant",
-            true,
-            providerLabel,
-            retrieval.usedDocuments
-        );
-
-        addSearchHistory(
-            message,
-            projectId,
-            providerLabel,
-            retrieval.usedDocuments
-        );
-
+        appendMessage(data.reply, "assistant", true, providerLabel, retrieval.usedDocuments, true);
+        addSearchHistory(message, projectId, providerLabel, retrieval.usedDocuments);
+        stopThinkingActivity(`Resposta concluída via ${data.provider}.`);
     } catch (error) {
+        removeThinkingBubble();
         appendMessage(`Erro: ${error.message}`, "assistant");
         addSearchHistory(message, projectId, "Erro", retrieval.usedDocuments);
+        stopThinkingActivity("Não foi possível concluir a resposta.");
+    } finally {
+        chatBusy = false;
+        chatSendBtn?.classList.remove("is-loading");
+        if (chatSendBtn) chatSendBtn.disabled = false;
+        if (chatInput) {
+            chatInput.disabled = false;
+            chatInput.focus();
+        }
     }
 }
 
-$("#chatForm")?.addEventListener("submit", event => {
-    event.preventDefault();
-    sendMessage(chatInput.value);
-});
-
+$("#chatForm")?.addEventListener("submit", event => { event.preventDefault(); sendMessage(chatInput.value); });
 chatInput?.addEventListener("keydown", event => {
-    if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        $("#chatForm")?.requestSubmit();
-    }
+    if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("#chatForm")?.requestSubmit(); }
 });
-
 chatInput?.addEventListener("input", () => {
     chatInput.style.height = "auto";
-    chatInput.style.height = `${Math.min(chatInput.scrollHeight, 120)}px`;
+    chatInput.style.height = `${Math.min(chatInput.scrollHeight, 150)}px`;
 });
-
-$$("[data-prompt]").forEach(button => {
-    button.addEventListener("click", () => sendMessage(button.dataset.prompt || ""));
-});
+$$('[data-prompt]').forEach(button => button.addEventListener("click", () => sendMessage(button.dataset.prompt || "")));
 
 $("#clearChatBtn")?.addEventListener("click", async () => {
     if (!confirm("Limpar a conversa atual? O histórico de pesquisas continuará disponível.")) return;
@@ -766,6 +839,7 @@ $("#clearChatBtn")?.addEventListener("click", async () => {
         await apiRequest("/api/chat", { method: "DELETE" });
         state.chat = [];
         renderDefaultAssistant();
+        stopThinkingActivity("Conversa limpa. Pronto para uma nova pergunta.");
     } catch (error) {
         alert(`Não foi possível limpar a conversa: ${error.message}`);
     }

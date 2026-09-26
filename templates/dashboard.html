@@ -170,12 +170,21 @@
                         </div>
                     </div>
 
+                    <div class="ai-activity-strip" id="aiActivityStrip" aria-live="polite">
+                        <div class="ai-pulse-orb"><span></span><span></span><span></span></div>
+                        <div>
+                            <strong id="aiActivityTitle">Agente pronto</strong>
+                            <small id="aiActivityDetail">Envie uma pergunta para iniciar.</small>
+                        </div>
+                        <span class="ai-elapsed" id="aiElapsed"></span>
+                    </div>
+
                     <div class="chat-window futuristic-chat-window dark-chat-window" id="chatWindow"></div>
 
                     <form class="chat-composer futuristic-composer dark-composer" id="chatForm">
                         <input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
                         <textarea id="chatInput" rows="1" placeholder="Pergunte sobre seus documentos, projetos ou qualquer outro assunto..." aria-label="Mensagem para o agente"></textarea>
-                        <button type="submit" aria-label="Enviar mensagem">➤</button>
+                        <button type="submit" id="chatSendBtn" aria-label="Enviar mensagem"><span class="send-icon">➤</span><span class="send-loading">•••</span></button>
                     </form>
 
                     <div class="quick-actions futuristic-quick-actions dark-quick-actions">
@@ -238,7 +247,7 @@
                     </div>
 
                     <p class="panel-description">
-                        Os arquivos são lidos pelo servidor, convertidos em texto, divididos em trechos e persistidos com segurança no PostgreSQL.
+                        Use arquivos ou pastas da sua própria máquina. Você escolhe o conteúdo local, o navegador envia somente os arquivos selecionados e o agente transforma esse material em conhecimento pesquisável.
                     </p>
 
                     <div class="knowledge-upload-grid">
@@ -247,19 +256,34 @@
                             <select id="fileProjectSelect"></select>
                         </label>
 
-                        <label class="file-picker advanced-file-picker">
-                            <input id="localFileInput" type="file" multiple accept=".pdf,.docx,.xlsx,.xlsm,.txt,.md,.csv,.json,.xml,.html,.htm,.log">
-                            <div>
-                                <strong>Selecionar arquivos</strong>
-                                <small>PDF, Word, Excel, TXT, CSV, JSON e outros — até 15 MB por envio.</small>
-                            </div>
-                        </label>
+                        <div class="local-source-actions">
+                            <label class="file-picker advanced-file-picker">
+                                <input id="localFileInput" type="file" multiple accept=".pdf,.docx,.xlsx,.xlsm,.txt,.md,.csv,.json,.xml,.html,.htm,.log">
+                                <div>
+                                    <strong>Selecionar arquivos</strong>
+                                    <small>Escolha documentos locais da máquina.</small>
+                                </div>
+                            </label>
 
-                        <button type="button" class="primary-small-btn import-main-btn" id="importLocalFileBtn">Importar conhecimento</button>
+                            <label class="file-picker advanced-file-picker folder-picker">
+                                <input id="localFolderInput" type="file" webkitdirectory directory multiple>
+                                <div>
+                                    <strong>Selecionar pasta local</strong>
+                                    <small>Lê arquivos compatíveis dentro da pasta escolhida.</small>
+                                </div>
+                            </label>
+                        </div>
+
+                        <button type="button" class="primary-small-btn import-main-btn" id="importLocalFileBtn">Adicionar à base local</button>
+                    </div>
+
+                    <div class="local-drop-zone" id="localDropZone">
+                        <span class="drop-zone-icon">⇩</span>
+                        <div><strong>Arraste arquivos da máquina para cá</strong><small>PDF, Word, Excel, TXT, CSV, JSON, XML, HTML e LOG · até 15 MB por arquivo</small></div>
                     </div>
 
                     <div class="selected-files-preview" id="selectedFilesPreview"></div>
-                    <div class="import-feedback" id="fileImportStatus">Selecione um projeto e um ou mais arquivos.</div>
+                    <div class="import-feedback" id="fileImportStatus">Selecione um projeto e arquivos locais para começar.</div>
 
                     <div class="knowledge-toolbar">
                         <select id="knowledgeProjectFilter"></select>
