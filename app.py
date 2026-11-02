@@ -30,6 +30,7 @@ from openpyxl import load_workbook
 from pypdf import PdfReader
 
 from wellness_storage import init_wellness
+from personal_ai import init_personal_ai, get_config, save_config, delete_config, generate, PROVIDERS
 from login_security import init_limits, allow_attempt
 
 from storage import (
@@ -180,6 +181,7 @@ try:
     if os.getenv("DATABASE_URL"):
         init_accounts()
         init_wellness()
+        init_personal_ai()
         init_limits()
 except Exception:
     logger.exception("Não foi possível inicializar cadastro de usuários")
@@ -1352,10 +1354,11 @@ def api_knowledge_status():
 @app.route("/api/agent/status")
 @login_required
 def agent_status():
-    configured = [
+    personal = get_config(_owner_id())
+    configured = ([{"provider": PROVIDERS[personal["provider"]][0], "model":personal["model"]}] if personal else [
         {"provider": provider["name"], "model": provider["model"]}
         for provider in provider_configurations()
-    ]
+    ])
 
     return jsonify({
         "configured": configured,
@@ -1395,7 +1398,8 @@ def agent():
         messages.append({"role": "user", "content": message})
 
     try:
-        result = ask_with_gemini(messages)
+        personal = get_config(_owner_id(), reveal=True)
+        result = generate(personal,messages) if personal else ask_with_gemini(messages)
         result.update({
             "usedDocuments": retrieval["usedDocuments"],
             "retrievalCount": retrieval["chunkCount"],
@@ -1432,3 +1436,26 @@ register_health_routes(app)
 if __name__ == "__main__":
     app.run(debug=True)
 
+
+
+@app.route('/configurar-ia')
+@login_required
+def configurar_ia():
+    return render_template('configurar_ia.html',providers=PROVIDERS)
+
+@app.route('/api/minha-ia',methods=['GET','POST','DELETE'])
+@login_required
+def minha_ia():
+    try:
+        if request.method=='GET':
+            return jsonify(config=get_config(_owner_id()),providers={k:{'name':v[0],'default_model':v[2]} for k,v in PROVIDERS.items()})
+        if request.method=='DELETE':
+            delete_config(_owner_id());return jsonify(ok=True)
+        data=request.get_json(silent=True) or {}
+        save_config(_owner_id(),str(data.get('provider','')),str(data.get('model','')),str(data.get('api_key','')))
+        return jsonify(ok=True,config=get_config(_owner_id()))
+    except ValueError as exc: return jsonify(error=str(exc)),400
+    except RuntimeError as exc: return jsonify(error=str(exc)),503
+    except Exception:
+        logger.exception('Erro ao configurar IA pessoal')
+        return jsonify(error='Não foi possível salvar a configuração da IA.'),500
