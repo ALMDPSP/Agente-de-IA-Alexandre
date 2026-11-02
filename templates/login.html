@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#050b15">
-    <title>Agente de IA próprio para Alexandre | Login</title>
+    <title>Minha Evolução IA | Login</title>
 
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='icons/alexandre-ai.svg') }}">
     <link rel="icon" type="image/png" sizes="64x64" href="{{ url_for('static', filename='icons/favicon-64.png') }}">
@@ -40,7 +40,7 @@
 
                 <div class="security-pills futuristic-pills">
                     <span>◆ Identidade protegida</span>
-                    <span>◆ MFA / TOTP</span>
+                    <span>◆ Login com senha</span>
                     <span>◆ Base privada de conhecimento</span>
                 </div>
             </div>
@@ -67,7 +67,7 @@
             <div class="auth-status-grid">
                 <div class="auth-status-card">
                     <small>SECURITY</small>
-                    <strong>{{ "2FA ATIVO" if mfa_enabled else "Acesso protegido" }}</strong>
+                    <strong>Acesso protegido</strong>
                 </div>
                 <div class="auth-status-card">
                     <small>AI CORE</small>
@@ -89,15 +89,13 @@
                     </div>
 
                     <div class="auth-icon-lock auth-icon-lock-v2">◈</div>
-                    <span class="eyebrow">PASSO 1 DE {{ "2" if mfa_enabled else "1" }}</span>
+                    <span class="eyebrow">LOGIN</span>
                     <h2>Entrar no ambiente</h2>
                     <p>Digite seu e-mail e senha para acessar o agente de IA próprio para Alexandre.</p>
                 </div>
 
                 <div class="auth-progress auth-progress-login">
                     <span class="step active"><i></i> Credenciais</span>
-                    <span class="line"></span>
-                    <span class="step {{ 'pending' if mfa_enabled else 'done' }}"><i></i> MFA</span>
                     <span class="line"></span>
                     <span class="step pending"><i></i> Dashboard</span>
                 </div>
@@ -127,9 +125,6 @@
                             <input type="checkbox" name="remember">
                             <span>Manter conectado</span>
                         </label>
-                        <span class="mfa-mini-badge {{ 'enabled' if mfa_enabled else 'disabled' }}">
-                            {{ '2FA habilitado' if mfa_enabled else '2FA opcional' }}
-                        </span>
                     </div>
 
                     <button class="primary-btn futuristic-btn auth-submit-btn" type="submit">
@@ -143,13 +138,9 @@
                 <div class="security-note auth-security-note auth-security-note-v2">
                     <span class="shield-symbol">◇</span>
                     <div>
-                        <strong>{{ "Dupla autenticação ativa" if mfa_enabled else "Acesso protegido" }}</strong>
+                        <strong>Acesso protegido por senha</strong>
                         <small>
-                            {% if mfa_enabled %}
-                                Após validar a senha, você seguirá para a etapa do código do autenticador.
-                            {% else %}
-                                Ative MFA no Render para adicionar a segunda camada de proteção.
-                            {% endif %}
+                            Utilize sua senha para acessar o aplicativo.
                         </small>
                     </div>
                 </div>
