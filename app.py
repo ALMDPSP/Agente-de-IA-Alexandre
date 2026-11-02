@@ -8,6 +8,8 @@ import re
 import time
 import uuid
 from datetime import timedelta
+from collections import deque
+from threading import Lock
 from pathlib import Path
 
 import requests
@@ -622,6 +624,28 @@ def index():
     return redirect(url_for("login"))
 
 
+# Fallback conservador apenas para o administrador quando o PostgreSQL
+# estiver fora do ar. Estado por processo: recomenda-se proteção adicional
+# por proxy/WAF em produção.
+_admin_attempt_lock = Lock()
+_admin_attempts = {}
+
+
+def allow_admin_local_attempt(ip, email):
+    key = (ip or "unknown", email)
+    now = time.monotonic()
+    with _admin_attempt_lock:
+        for old_key in list(_admin_attempts):
+            _admin_attempts[old_key] = deque(t for t in _admin_attempts[old_key] if now - t < 900)
+            if not _admin_attempts[old_key]:
+                del _admin_attempts[old_key]
+        hits = _admin_attempts.setdefault(key, deque())
+        if len(hits) >= 10:
+            return False
+        hits.append(now)
+        return True
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
@@ -633,24 +657,27 @@ def login():
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         remember = request.form.get("remember") == "on"
+        admin_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
+        admin_password = os.getenv("ADMIN_PASSWORD", "")
+        email_ok = bool(admin_email) and hmac.compare_digest(email, admin_email)
+        password_ok = bool(admin_password) and hmac.compare_digest(password, admin_password)
+        # The environment administrator authenticates independently of PostgreSQL.
+        # Apply a local per-IP/account rate limit before credential checking.
+        if email_ok:
+            if not allow_admin_local_attempt(request.remote_addr, email):
+                return render_template('login.html', error='Muitas tentativas. Tente novamente em 15 minutos.'), 429
+            if password_ok:
+                login_user(get_admin_user(), remember=remember)
+                return redirect(url_for("dashboard"))
+            return render_template('login.html', error='E-mail ou senha inválidos.'), 401
+
         try:
-            # Separate IP-wide and account-based thresholds.
             if not (allow_attempt('login-ip', request.remote_addr, limit=25) and
                     allow_attempt('login-account', 'all', email, limit=10)):
                 return render_template('login.html', error='Muitas tentativas. Tente novamente em 15 minutos.'), 429
         except Exception:
-            logger.exception('Limite de login indisponível')
-            return render_template('login.html', error='Login temporariamente indisponível.'), 503
-
-        admin_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
-        admin_password = os.getenv("ADMIN_PASSWORD", "")
-
-        email_ok = bool(admin_email) and hmac.compare_digest(email, admin_email)
-        password_ok = bool(admin_password) and hmac.compare_digest(password, admin_password)
-
-        if email_ok and password_ok:
-            login_user(get_admin_user(), remember=remember)
-            return redirect(url_for("dashboard"))
+            logger.exception('Limite PostgreSQL indisponível durante login')
+            return render_template('login.html', error='Serviço de contas temporariamente indisponível.'), 503
 
         try:
             with account_connection() as conn:
