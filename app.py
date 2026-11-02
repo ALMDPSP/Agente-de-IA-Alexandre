@@ -7,6 +7,10 @@ import os
 import re
 import time
 import uuid
+import secrets
+from urllib.parse import urlencode
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport.requests import Request as GoogleRequest
 from datetime import timedelta
 from collections import deque
 from threading import Lock
@@ -138,6 +142,8 @@ def init_accounts():
             CHECK (status IN ('pending','active','blocked')),
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )""")
+        conn.execute("ALTER TABLE wellness_accounts ADD COLUMN IF NOT EXISTS google_sub TEXT")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS wellness_google_sub_uq ON wellness_accounts (google_sub) WHERE google_sub IS NOT NULL")
 
 
 def get_account_by_id(user_id):
@@ -682,7 +688,7 @@ def login():
         try:
             with account_connection() as conn:
                 row = conn.execute("SELECT id,name,email,password_hash,status FROM wellness_accounts WHERE email=%s", (email,)).fetchone()
-            if row and check_password_hash(row["password_hash"], password):
+            if row and row["password_hash"] != "!google-only" and check_password_hash(row["password_hash"], password):
                 if row["status"] == "active":
                     login_user(EnvUser(row["id"], row["name"], row["email"]), remember=remember)
                     return redirect(url_for("dashboard"))
@@ -694,6 +700,84 @@ def login():
             error = "Serviço de contas indisponível. Tente mais tarde."
 
     return render_template("login.html", error=error)
+
+
+@app.context_processor
+def google_template_context():
+    return {"google_enabled": google_enabled}
+
+
+def google_enabled():
+    return bool(os.getenv("GOOGLE_CLIENT_ID") and os.getenv("GOOGLE_CLIENT_SECRET"))
+
+
+def google_redirect_uri():
+    # Set the exact HTTPS URL in GOOGLE_REDIRECT_URI and the Google Cloud console.
+    return (os.getenv("GOOGLE_REDIRECT_URI") or url_for("google_callback", _external=True)).strip()
+
+
+@app.route("/auth/google")
+def google_login():
+    if not google_enabled():
+        return render_template("login.html", error="Login Google ainda não configurado."), 503
+    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
+    session["google_oauth_state"] = state
+    session["google_oauth_nonce"] = nonce
+    url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
+        "client_id": os.environ["GOOGLE_CLIENT_ID"],
+        "redirect_uri": google_redirect_uri(),
+        "response_type": "code", "scope": "openid email profile",
+        "state": state, "nonce": nonce, "prompt": "select_account",
+    })
+    return redirect(url)
+
+
+@app.route("/auth/google/callback")
+def google_callback():
+    state = session.pop("google_oauth_state", None)
+    nonce = session.pop("google_oauth_nonce", None)
+    provided = request.args.get("state", "")
+    code = request.args.get("code", "")
+    if not state or not nonce or not secrets.compare_digest(state, provided) or not code:
+        return render_template("login.html", error="Autenticação Google cancelada ou inválida. Tente novamente."), 400
+    try:
+        token_response = requests.post("https://oauth2.googleapis.com/token", data={
+            "client_id": os.environ["GOOGLE_CLIENT_ID"],
+            "client_secret": os.environ["GOOGLE_CLIENT_SECRET"],
+            "redirect_uri": google_redirect_uri(), "code": code, "grant_type": "authorization_code",
+        }, timeout=15)
+        token_response.raise_for_status()
+        jwt = token_response.json()["id_token"]
+        claims = google_id_token.verify_oauth2_token(jwt, GoogleRequest(), os.environ["GOOGLE_CLIENT_ID"])
+        if not secrets.compare_digest(str(claims.get("nonce") or ""), nonce):
+            raise ValueError("OAuth nonce inválido")
+        if claims.get("email_verified") is not True or not claims.get("sub") or not claims.get("email"):
+            raise ValueError("E-mail Google não verificado")
+        email = claims["email"].strip().lower()
+        sub = str(claims["sub"])
+        name = str(claims.get("name") or email.split("@")[0])[:100]
+        # Do not silently elevate/merge identities based on an email match.
+        if email == os.getenv("ADMIN_EMAIL", "").strip().lower():
+            return render_template("login.html", error="Para a conta administradora, entre com e-mail e senha."), 403
+        with account_connection() as conn:
+            row = conn.execute("SELECT id,name,email,status,google_sub FROM wellness_accounts WHERE google_sub=%s", (sub,)).fetchone()
+            if row is None:
+                existing = conn.execute("SELECT id FROM wellness_accounts WHERE email=%s", (email,)).fetchone()
+                if existing:
+                    return render_template("login.html", error="Este e-mail já usa senha. Entre com e-mail e senha; a vinculação Google ficará para uma próxima atualização."), 409
+                user_id = str(uuid.uuid4())
+                conn.execute("INSERT INTO wellness_accounts (id,name,email,password_hash,status,google_sub) VALUES (%s,%s,%s,%s,'pending',%s)", (user_id, name, email, "!google-only", sub))
+                return render_template("login.html", error="Conta Google recebida! Aguarde a aprovação do administrador."), 200
+            if row["status"] == "pending":
+                return render_template("login.html", error="Seu cadastro está aguardando aprovação."), 403
+            if row["status"] != "active":
+                return render_template("login.html", error="Sua conta está bloqueada."), 403
+            login_user(EnvUser(row["id"], row["name"], row["email"]))
+            return redirect(url_for("dashboard"))
+    except (requests.RequestException, ValueError, KeyError, psycopg.Error):
+        logger.exception("Falha no login via Google")
+        return render_template("login.html", error="Não foi possível autenticar com Google. Verifique a configuração e tente novamente."), 503
 
 
 @app.route("/cadastro", methods=["GET", "POST"])

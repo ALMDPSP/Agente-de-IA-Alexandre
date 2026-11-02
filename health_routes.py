@@ -7,6 +7,7 @@ from flask import jsonify, render_template, request
 from flask_login import login_required, current_user
 
 from wellness_storage import read_state, update_state
+from ai_providers import analyze
 
 MAX_IMG=5*1024*1024
 
@@ -78,10 +79,11 @@ def register_health_routes(app):
         if not mimetype:return jsonify(error='Envie imagem JPG, PNG ou WEBP.'),400
         prompt='''Analise a foto como assistente educacional de alimentação, em português brasileiro. Identifique apenas alimentos visíveis, não presuma ingredientes invisíveis. Estime calorias somente como intervalo amplo e com alto grau de incerteza; a foto não permite peso nem calorias exatos. Responda SOMENTE JSON válido com campos: alimentos (lista de strings), calorias_min (inteiro ou null), calorias_max (inteiro ou null), observacoes (string curta), sugestao (string curta). Se não for prato de comida, use alimentos vazio, valores null e explique. Não faça julgamento moral nem dê diagnóstico.'''
         try:
-            result=_json_reply(_gemini([{'inline_data':{'mime_type':mimetype,'data':base64.b64encode(raw).decode('ascii')}}],prompt))
+            analysis=analyze(prompt, image=(mimetype,base64.b64encode(raw).decode('ascii')))
+            result=_json_reply(analysis['text'])
             foods=result.get('alimentos',[])
             if not isinstance(foods,list):foods=[]
-            entry={'id':str(uuid.uuid4()),'kind':kind,'at':datetime.now(timezone.utc).isoformat(),'alimentos':[str(x)[:100] for x in foods[:20]],'calorias_min':result.get('calorias_min'),'calorias_max':result.get('calorias_max'),'observacoes':str(result.get('observacoes',''))[:1000],'sugestao':str(result.get('sugestao',''))[:1000]}
+            entry={'id':str(uuid.uuid4()),'kind':kind,'at':datetime.now(timezone.utc).isoformat(),'alimentos':[str(x)[:100] for x in foods[:20]],'calorias_min':result.get('calorias_min'),'calorias_max':result.get('calorias_max'),'observacoes':str(result.get('observacoes',''))[:1000],'sugestao':str(result.get('sugestao',''))[:1000],'provider':analysis['provider']}
             # A imagem não é salva. Armazenamos somente a análise resumida.
             _update(lambda state: state.setdefault('meals',[]).append(entry))
             return jsonify(entry),201
@@ -94,5 +96,7 @@ def register_health_routes(app):
         if not q:return jsonify(error='Escreva uma pergunta.'),400
         state=_state();recent=state.get('meals',[])[-12:];profile=state.get('profile',{})
         prompt='''Você é um acompanhante virtual de hábitos alimentares em português do Brasil, acolhedor, prático e sem julgamento. Não se apresente como nutricionista registrado. Não prescreva medicamentos, calorias restritivas ou metas rápidas. Fotos e contagens são estimativas; peça confirmação de porções. Em sinais de transtorno alimentar ou sintomas importantes, incentive avaliação profissional. Contexto resumido: '''+json.dumps({'perfil':profile,'refeicoes':recent},ensure_ascii=False)[:6500]+'\nPergunta: '+q
-        try:return jsonify(answer=_gemini([],prompt)[:4500])
+        try:
+            response=analyze(prompt)
+            return jsonify(answer=response['text'][:4500],provider=response['provider'])
         except (RuntimeError,requests.RequestException) as exc:return jsonify(error=str(exc)[:200]),502

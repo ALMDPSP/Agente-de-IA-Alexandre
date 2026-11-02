@@ -57,6 +57,7 @@
           <label class="remember"><input type="checkbox" name="remember"><span>Manter conectado</span></label>
           <button class="submit" type="submit">Entrar no aplicativo <span aria-hidden="true">→</span></button>
         </form>
+        {% if google_enabled() %}<div class="social-separator">ou continue com</div><a class="google-login" href="{{ url_for('google_login') }}">🌐 Entrar com Google</a>{% endif %}
         <p class="signup-callout">Ainda não tem uma conta? <a href="{{ url_for('cadastro') }}">Criar minha conta</a></p>
         {% if current_user.is_authenticated and current_user.get_id() == "admin" %}<a href="{{ url_for('admin_usuarios') }}">Gerenciar usuários</a>{% endif %}
         <p class="privacy">🔒 Sua jornada é pessoal. Mantenha sua senha protegida.</p>
