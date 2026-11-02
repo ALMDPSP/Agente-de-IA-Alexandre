@@ -8,7 +8,6 @@ from flask_login import login_required, current_user
 
 from wellness_storage import read_state, update_state
 from ai_providers import analyze
-from personal_ai import get_config, generate
 
 MAX_IMG=5*1024*1024
 
@@ -110,9 +109,8 @@ def register_health_routes(app):
         if not mimetype:return jsonify(error='Envie imagem JPG, PNG ou WEBP.'),400
         prompt='''Analise a foto como assistente educacional de alimentação, em português brasileiro. Identifique apenas alimentos visíveis, não presuma ingredientes invisíveis. Estime calorias somente como intervalo amplo e com alto grau de incerteza; a foto não permite peso nem calorias exatos. Responda SOMENTE JSON válido com campos: alimentos (lista de strings), calorias_min (inteiro ou null), calorias_max (inteiro ou null), observacoes (string curta), sugestao (string curta). Se não for prato de comida, use alimentos vazio, valores null e explique. Não faça julgamento moral nem dê diagnóstico.'''
         try:
-            personal=get_config(_user(),reveal=True)
             image=(mimetype,base64.b64encode(raw).decode('ascii'))
-            analysis=generate(personal,[{'role':'user','content':prompt}],image=image) if personal else analyze(prompt,image=image)
+            analysis=analyze(prompt,image=image)
             result=_json_reply(analysis['text'])
             foods=result.get('alimentos',[])
             if not isinstance(foods,list):foods=[]
@@ -120,7 +118,9 @@ def register_health_routes(app):
             # A imagem não é salva. Armazenamos somente a análise resumida.
             _update(lambda state: state.setdefault('meals',[]).append(entry))
             return jsonify(entry),201
-        except (RuntimeError,ValueError,requests.RequestException) as exc:return jsonify(error=str(exc)[:220]),502
+        except (RuntimeError,ValueError,requests.RequestException) as exc:
+            app.logger.warning('Falha controlada ao analisar refeição: %s', type(exc).__name__)
+            return jsonify(error=str(exc)[:220]),502
 
     @app.route('/api/evolucao/conversas',methods=['DELETE'])
     @login_required
@@ -136,8 +136,7 @@ def register_health_routes(app):
         state=_state();recent=state.get('meals',[])[-12:];profile=state.get('profile',{})
         prompt='''Você é um acompanhante virtual de hábitos alimentares em português do Brasil, acolhedor, prático e sem julgamento. Não se apresente como nutricionista registrado. Não prescreva medicamentos, calorias restritivas ou metas rápidas. Fotos e contagens são estimativas; peça confirmação de porções. Em sinais de transtorno alimentar ou sintomas importantes, incentive avaliação profissional. Contexto resumido: '''+json.dumps({'perfil':profile,'refeicoes':recent},ensure_ascii=False)[:6500]+'\nPergunta: '+q
         try:
-            personal=get_config(_user(),reveal=True)
-            response=generate(personal,[{'role':'user','content':prompt}]) if personal else analyze(prompt)
+            response=analyze(prompt)
             _update(lambda state: (state.setdefault('chat_history',[]).append({'question':q[:1400],'answer':response['text'][:4500],'at':datetime.now(timezone.utc).isoformat(),'provider':response['provider']}), state.__setitem__('chat_history',state['chat_history'][-60:])))
             return jsonify(answer=response['text'][:4500],provider=response['provider'])
         except (RuntimeError,requests.RequestException) as exc:return jsonify(error=str(exc)[:200]),502

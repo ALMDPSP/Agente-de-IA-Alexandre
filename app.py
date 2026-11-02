@@ -1438,14 +1438,25 @@ if __name__ == "__main__":
 
 
 
+@app.route('/api/ia-disponibilidade')
+@login_required
+def disponibilidade_ia():
+    # Apenas nomes dos provedores. Nunca devolva chaves ao navegador.
+    providers=[]
+    if os.getenv('GEMINI_API_KEY','').strip(): providers.append('Gemini')
+    if os.getenv('OPENAI_API_KEY','').strip(): providers.append('OpenAI')
+    return jsonify(available=bool(providers),providers=providers)
+
 @app.route('/configurar-ia')
 @login_required
 def configurar_ia():
-    return render_template('configurar_ia.html',providers=PROVIDERS)
+    return redirect(url_for('evolucao'))
 
 @app.route('/api/minha-ia',methods=['GET','POST','DELETE'])
 @login_required
 def minha_ia():
+    if str(current_user.get_id()) != 'admin':
+        return jsonify(error='A IA é fornecida automaticamente pelo sistema; não é necessário configurar uma chave.'),403
     try:
         if request.method=='GET':
             return jsonify(config=get_config(_owner_id()),providers={k:{'name':v[0],'default_model':v[2]} for k,v in PROVIDERS.items()})
@@ -1464,6 +1475,8 @@ def minha_ia():
 @app.route('/api/minha-ia/testar', methods=['POST'])
 @login_required
 def testar_minha_ia():
+    if str(current_user.get_id()) != 'admin':
+        return jsonify(error='IA gerenciada pelo administrador.'),403
     try:
         config = get_config(_owner_id(), reveal=True)
         if not config:
