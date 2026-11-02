@@ -45,6 +45,36 @@ def register_health_routes(app):
     @login_required
     def evolucao_estado():return jsonify(_state())
 
+    @app.route('/api/evolucao/admin-resumo')
+    @login_required
+    def evolucao_admin_resumo():
+        # Apenas métricas agregadas. Dados particulares de refeições e chats não são expostos.
+        if _user() != 'admin':
+            return jsonify(error='Acesso restrito ao administrador.'), 403
+        from wellness_storage import connect
+        from datetime import timedelta
+        with connect() as conn:
+            rows=conn.execute("SELECT user_id, state, updated_at FROM wellness_diaries").fetchall()
+        now=datetime.now(timezone.utc)
+        summary={'usuarios_com_diario':len(rows),'ativos_7_dias':0,'ativos_30_dias':0,'refeicoes_30_dias':0,'conversas_30_dias':0,'total_requisicoes_registradas':0,'por_provedor':{}}
+        for row in rows:
+            updated=row['updated_at']
+            if updated and (now-updated).days < 7:summary['ativos_7_dias']+=1
+            if updated and (now-updated).days < 30:summary['ativos_30_dias']+=1
+            state=row['state'] or {}
+            for typ,field in [('meals','refeicoes_30_dias'),('chat_history','conversas_30_dias')]:
+                for entry in state.get(typ,[]):
+                    try:
+                        stamp=datetime.fromisoformat(entry['at'].replace('Z','+00:00'))
+                        if stamp.tzinfo is None:stamp=stamp.replace(tzinfo=timezone.utc)
+                        if now-stamp > timedelta(days=30):continue
+                    except (KeyError,ValueError,TypeError):continue
+                    summary[field]+=1
+                    provider=str(entry.get('provider') or 'Não informado')[:60]
+                    summary['por_provedor'][provider]=summary['por_provedor'].get(provider,0)+1
+                    summary['total_requisicoes_registradas']+=1
+        return jsonify(summary)
+
     @app.route('/api/evolucao/perfil',methods=['POST'])
     @login_required
     def evolucao_perfil():
