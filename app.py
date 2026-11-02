@@ -30,7 +30,6 @@ from openpyxl import load_workbook
 from pypdf import PdfReader
 
 from wellness_storage import init_wellness
-from personal_ai import init_personal_ai, get_config, save_config, delete_config, generate, PROVIDERS
 from login_security import init_limits, allow_attempt
 
 from storage import (
@@ -158,7 +157,7 @@ def restrict_legacy_agent_routes():
     if not current_user.is_authenticated or current_user.get_id() == 'admin':
         return None
     path = request.path
-    allowed = ('/evolucao', '/api/evolucao/', '/configurar-ia', '/api/minha-ia', '/logout', '/static/')
+    allowed = ('/evolucao', '/api/evolucao/', '/logout', '/static/')
     if path == '/dashboard' or any(path.startswith(p) for p in allowed):
         return None
     abort(403)
@@ -177,15 +176,14 @@ def load_user(user_id):
     return None
 
 
-try:
-    if os.getenv("DATABASE_URL"):
-        init_accounts()
-        init_wellness()
-        init_personal_ai()
-        init_limits()
-except Exception:
-    logger.exception("Não foi possível inicializar cadastro de usuários")
-
+# Cada tabela é inicializada de forma independente: uma falha de autenticação
+# nunca deve impedir a criação do diário alimentar.
+if os.getenv("DATABASE_URL"):
+    for label, initializer in (("contas", init_accounts), ("diario", init_wellness), ("limites", init_limits)):
+        try:
+            initializer()
+        except Exception:
+            logger.exception("Não foi possível inicializar tabela: %s", label)
 
 def env_bool(name, default=False):
     value = os.getenv(name)
@@ -1354,11 +1352,10 @@ def api_knowledge_status():
 @app.route("/api/agent/status")
 @login_required
 def agent_status():
-    personal = get_config(_owner_id())
-    configured = ([{"provider": PROVIDERS[personal["provider"]][0], "model":personal["model"]}] if personal else [
+    configured = [
         {"provider": provider["name"], "model": provider["model"]}
         for provider in provider_configurations()
-    ])
+    ]
 
     return jsonify({
         "configured": configured,
@@ -1398,8 +1395,7 @@ def agent():
         messages.append({"role": "user", "content": message})
 
     try:
-        personal = get_config(_owner_id(), reveal=True)
-        result = generate(personal,messages) if personal else ask_with_gemini(messages)
+        result = ask_with_gemini(messages)
         result.update({
             "usedDocuments": retrieval["usedDocuments"],
             "retrievalCount": retrieval["chunkCount"],
@@ -1436,55 +1432,3 @@ register_health_routes(app)
 if __name__ == "__main__":
     app.run(debug=True)
 
-
-
-@app.route('/api/ia-disponibilidade')
-@login_required
-def disponibilidade_ia():
-    # Apenas nomes dos provedores. Nunca devolva chaves ao navegador.
-    providers=[]
-    if os.getenv('GEMINI_API_KEY','').strip(): providers.append('Gemini')
-    if os.getenv('OPENAI_API_KEY','').strip(): providers.append('OpenAI')
-    return jsonify(available=bool(providers),providers=providers)
-
-@app.route('/configurar-ia')
-@login_required
-def configurar_ia():
-    return redirect(url_for('evolucao'))
-
-@app.route('/api/minha-ia',methods=['GET','POST','DELETE'])
-@login_required
-def minha_ia():
-    if str(current_user.get_id()) != 'admin':
-        return jsonify(error='A IA é fornecida automaticamente pelo sistema; não é necessário configurar uma chave.'),403
-    try:
-        if request.method=='GET':
-            return jsonify(config=get_config(_owner_id()),providers={k:{'name':v[0],'default_model':v[2]} for k,v in PROVIDERS.items()})
-        if request.method=='DELETE':
-            delete_config(_owner_id());return jsonify(ok=True)
-        data=request.get_json(silent=True) or {}
-        save_config(_owner_id(),str(data.get('provider','')),str(data.get('model','')),str(data.get('api_key','')))
-        return jsonify(ok=True,config=get_config(_owner_id()))
-    except ValueError as exc: return jsonify(error=str(exc)),400
-    except RuntimeError as exc: return jsonify(error=str(exc)),503
-    except Exception:
-        logger.exception('Erro ao configurar IA pessoal')
-        return jsonify(error='Não foi possível salvar a configuração da IA.'),500
-
-
-@app.route('/api/minha-ia/testar', methods=['POST'])
-@login_required
-def testar_minha_ia():
-    if str(current_user.get_id()) != 'admin':
-        return jsonify(error='IA gerenciada pelo administrador.'),403
-    try:
-        config = get_config(_owner_id(), reveal=True)
-        if not config:
-            return jsonify(error='Configure sua IA e salve uma chave de API antes de testar.'), 400
-        response = generate(config, [{'role':'user','content':'Responda apenas: conexão OK'}])
-        return jsonify(ok=True, provider=response['provider'], model=response['model'], message='Conexão validada. O modelo respondeu ao teste.')
-    except RuntimeError as exc:
-        return jsonify(error=str(exc)[:180]), 502
-    except Exception:
-        logger.exception('Falha ao testar IA pessoal')
-        return jsonify(error='Não foi possível testar a IA. Tente novamente.'), 502

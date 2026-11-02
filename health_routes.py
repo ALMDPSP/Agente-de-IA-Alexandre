@@ -3,10 +3,11 @@ import base64, json, os, re, threading, uuid
 from datetime import datetime, timezone
 from pathlib import Path
 import requests
-from flask import jsonify, render_template, request
+from flask import jsonify, render_template, request, current_app
 from flask_login import login_required, current_user
 
 from wellness_storage import read_state, update_state
+import psycopg
 from ai_providers import analyze
 
 MAX_IMG=5*1024*1024
@@ -36,6 +37,19 @@ def _json_reply(text):
         raise ValueError('A IA não retornou uma análise estruturada. Tente outra foto.')
 
 def register_health_routes(app):
+    @app.errorhandler(psycopg.Error)
+    def database_failure(exc):
+        current_app.logger.exception('Falha PostgreSQL ao acessar dados do aplicativo')
+        return jsonify(error='Não foi possível acessar o banco de dados. Confira DATABASE_URL, conexão Neon e permissões no Render.'), 503
+
+    @app.errorhandler(RuntimeError)
+    def wellness_configuration_failure(exc):
+        # Não revelar URLs, tokens ou outros segredos na resposta.
+        if request.path.startswith('/api/evolucao/'):
+            current_app.logger.exception('Falha de configuração no diário')
+            return jsonify(error='Armazenamento indisponível. Verifique DATABASE_URL no Render e os logs do serviço.'), 503
+        raise exc
+
     @app.route('/evolucao')
     @login_required
     def evolucao():return render_template('evolucao.html',user=current_user)
@@ -43,36 +57,6 @@ def register_health_routes(app):
     @app.route('/api/evolucao/estado')
     @login_required
     def evolucao_estado():return jsonify(_state())
-
-    @app.route('/api/evolucao/admin-resumo')
-    @login_required
-    def evolucao_admin_resumo():
-        # Apenas métricas agregadas. Dados particulares de refeições e chats não são expostos.
-        if _user() != 'admin':
-            return jsonify(error='Acesso restrito ao administrador.'), 403
-        from wellness_storage import connect
-        from datetime import timedelta
-        with connect() as conn:
-            rows=conn.execute("SELECT user_id, state, updated_at FROM wellness_diaries").fetchall()
-        now=datetime.now(timezone.utc)
-        summary={'usuarios_com_diario':len(rows),'ativos_7_dias':0,'ativos_30_dias':0,'refeicoes_30_dias':0,'conversas_30_dias':0,'total_requisicoes_registradas':0,'por_provedor':{}}
-        for row in rows:
-            updated=row['updated_at']
-            if updated and (now-updated).days < 7:summary['ativos_7_dias']+=1
-            if updated and (now-updated).days < 30:summary['ativos_30_dias']+=1
-            state=row['state'] or {}
-            for typ,field in [('meals','refeicoes_30_dias'),('chat_history','conversas_30_dias')]:
-                for entry in state.get(typ,[]):
-                    try:
-                        stamp=datetime.fromisoformat(entry['at'].replace('Z','+00:00'))
-                        if stamp.tzinfo is None:stamp=stamp.replace(tzinfo=timezone.utc)
-                        if now-stamp > timedelta(days=30):continue
-                    except (KeyError,ValueError,TypeError):continue
-                    summary[field]+=1
-                    provider=str(entry.get('provider') or 'Não informado')[:60]
-                    summary['por_provedor'][provider]=summary['por_provedor'].get(provider,0)+1
-                    summary['total_requisicoes_registradas']+=1
-        return jsonify(summary)
 
     @app.route('/api/evolucao/perfil',methods=['POST'])
     @login_required
@@ -109,8 +93,7 @@ def register_health_routes(app):
         if not mimetype:return jsonify(error='Envie imagem JPG, PNG ou WEBP.'),400
         prompt='''Analise a foto como assistente educacional de alimentação, em português brasileiro. Identifique apenas alimentos visíveis, não presuma ingredientes invisíveis. Estime calorias somente como intervalo amplo e com alto grau de incerteza; a foto não permite peso nem calorias exatos. Responda SOMENTE JSON válido com campos: alimentos (lista de strings), calorias_min (inteiro ou null), calorias_max (inteiro ou null), observacoes (string curta), sugestao (string curta). Se não for prato de comida, use alimentos vazio, valores null e explique. Não faça julgamento moral nem dê diagnóstico.'''
         try:
-            image=(mimetype,base64.b64encode(raw).decode('ascii'))
-            analysis=analyze(prompt,image=image)
+            analysis=analyze(prompt, image=(mimetype,base64.b64encode(raw).decode('ascii')))
             result=_json_reply(analysis['text'])
             foods=result.get('alimentos',[])
             if not isinstance(foods,list):foods=[]
@@ -118,15 +101,48 @@ def register_health_routes(app):
             # A imagem não é salva. Armazenamos somente a análise resumida.
             _update(lambda state: state.setdefault('meals',[]).append(entry))
             return jsonify(entry),201
-        except (RuntimeError,ValueError,requests.RequestException) as exc:
-            app.logger.warning('Falha controlada ao analisar refeição: %s', type(exc).__name__)
-            return jsonify(error=str(exc)[:220]),502
+        except (RuntimeError,ValueError,requests.RequestException) as exc:return jsonify(error=str(exc)[:220]),502
 
-    @app.route('/api/evolucao/conversas',methods=['DELETE'])
+    @app.route('/api/evolucao/ia/status')
     @login_required
-    def limpar_conversas():
-        _update(lambda state: state.update(chat_history=[]))
-        return jsonify(ok=True)
+    def evolucao_ia_status():
+        # Exibe somente disponibilidade de configuração, nunca segredos.
+        providers=[p for p,key in [('Gemini','GEMINI_API_KEY'),('OpenAI','OPENAI_API_KEY')] if os.getenv(key,'').strip()]
+        return jsonify(configured=bool(providers),providers=providers)
+
+    @app.route('/api/evolucao/refeicao/manual',methods=['POST'])
+    @login_required
+    def evolucao_refeicao_manual():
+        data=request.get_json(silent=True) or {}
+        kind=str(data.get('kind','Refeição')).strip()[:35]
+        allowed={'Café da manhã','Almoço','Lanche','Jantar','Ceia'}
+        if kind not in allowed:return jsonify(error='Selecione uma refeição válida.'),400
+        foods=data.get('items',[])
+        if not isinstance(foods,list) or not 1<=len(foods)<=20:
+            return jsonify(error='Adicione de 1 a 20 alimentos.'),400
+        clean=[]
+        total=0.0
+        for item in foods:
+            if not isinstance(item,dict):return jsonify(error='Alimento inválido.'),400
+            name=str(item.get('name','')).strip()[:90]
+            try:
+                quantity=float(item.get('quantity'))
+                kcal100=float(item.get('kcal100'))
+            except (ValueError,TypeError):return jsonify(error='Confira as quantidades e calorias dos alimentos.'),400
+            if not name or not 0<quantity<=5000 or not 0<=kcal100<=950:
+                return jsonify(error='Informe alimento, quantidade em gramas e kcal por 100 g válidas.'),400
+            kcal=round(quantity*kcal100/100,1)
+            clean.append({'name':name,'quantity_g':round(quantity,1),'kcal_100g':round(kcal100,1),'kcal':kcal})
+            total+=kcal
+        if total>15000:return jsonify(error='Calorias totais fora do intervalo permitido. Revise o registro.'),400
+        notes=str(data.get('notes','')).strip()[:600]
+        entry={'id':str(uuid.uuid4()),'kind':kind,'at':datetime.now(timezone.utc).isoformat(),
+               'alimentos':[f"{x['name']} ({x['quantity_g']:g} g)" for x in clean],
+               'items':clean,'calorias_min':round(total),'calorias_max':round(total),
+               'observacoes':notes,'sugestao':'Valor aproximado calculado com os dados informados pelo usuário.',
+               'provider':'manual','source':'manual'}
+        _update(lambda state: state.setdefault('meals',[]).append(entry))
+        return jsonify(entry),201
 
     @app.route('/api/evolucao/chat',methods=['POST'])
     @login_required
@@ -137,6 +153,5 @@ def register_health_routes(app):
         prompt='''Você é um acompanhante virtual de hábitos alimentares em português do Brasil, acolhedor, prático e sem julgamento. Não se apresente como nutricionista registrado. Não prescreva medicamentos, calorias restritivas ou metas rápidas. Fotos e contagens são estimativas; peça confirmação de porções. Em sinais de transtorno alimentar ou sintomas importantes, incentive avaliação profissional. Contexto resumido: '''+json.dumps({'perfil':profile,'refeicoes':recent},ensure_ascii=False)[:6500]+'\nPergunta: '+q
         try:
             response=analyze(prompt)
-            _update(lambda state: (state.setdefault('chat_history',[]).append({'question':q[:1400],'answer':response['text'][:4500],'at':datetime.now(timezone.utc).isoformat(),'provider':response['provider']}), state.__setitem__('chat_history',state['chat_history'][-60:])))
             return jsonify(answer=response['text'][:4500],provider=response['provider'])
         except (RuntimeError,requests.RequestException) as exc:return jsonify(error=str(exc)[:200]),502

@@ -1,9 +1,8 @@
 """Persistência transacional e isolada por conta para dados de bem-estar."""
-import json
 import os
-from contextlib import contextmanager
 
 import psycopg
+from psycopg import errors
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
@@ -24,14 +23,30 @@ def init_wellness():
         )''')
 
 
+def _with_diary_table(action):
+    # Um deploy antigo pode ter falhado durante a criação das tabelas.
+    # Recuperar uma única vez quando a tabela do diário realmente não existir.
+    try:
+        return action()
+    except errors.UndefinedTable:
+        init_wellness()
+        return action()
+
+
 def read_state(user_id):
-    with connect() as conn:
-        row = conn.execute('SELECT state FROM wellness_diaries WHERE user_id = %s', (str(user_id),)).fetchone()
-    return row['state'] if row else {'meals': [], 'weights': [], 'profile': {}}
+    def perform():
+        with connect() as conn:
+            row = conn.execute('SELECT state FROM wellness_diaries WHERE user_id = %s', (str(user_id),)).fetchone()
+        return row['state'] if row else {'meals': [], 'weights': [], 'profile': {}}
+    return _with_diary_table(perform)
 
 
 def update_state(user_id, mutate):
-    """Row lock prevents lost updates when multiple devices write simultaneously."""
+    """Transação bloqueia a linha e preserva alterações concorrentes."""
+    return _with_diary_table(lambda: _update_existing_state(user_id, mutate))
+
+
+def _update_existing_state(user_id, mutate):
     with connect() as conn:
         conn.execute('''INSERT INTO wellness_diaries(user_id) VALUES (%s)
              ON CONFLICT (user_id) DO NOTHING''', (str(user_id),))

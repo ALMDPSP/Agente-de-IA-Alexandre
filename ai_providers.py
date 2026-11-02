@@ -13,7 +13,7 @@ class ProviderError(RuntimeError):
 
 def _post(url, *, headers=None, params=None, payload=None):
     try:
-        response = requests.post(url, headers=headers, params=params, json=payload, timeout=(5, 19))
+        response = requests.post(url, headers=headers, params=params, json=payload, timeout=55)
     except (requests.Timeout, requests.ConnectionError) as exc:
         raise ProviderError('Provedor IA', retryable=True) from exc
     if not response.ok:
