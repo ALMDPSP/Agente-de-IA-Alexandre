@@ -539,6 +539,10 @@ def unauthorized():
 @app.after_request
 def set_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
+    if request.path == "/static/sw.js":
+        response.headers["Service-Worker-Allowed"] = "/"
+    if request.path.endswith(".webmanifest"):
+        response.headers["Content-Type"] = "application/manifest+json"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
