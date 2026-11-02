@@ -623,6 +623,11 @@ def set_security_headers(response):
     return response
 
 
+@app.route("/instalar")
+def instalar_aplicativo():
+    return render_template("instalar.html")
+
+
 @app.route("/")
 def index():
     if current_user.is_authenticated:
