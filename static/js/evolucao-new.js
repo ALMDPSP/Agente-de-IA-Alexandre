@@ -183,20 +183,41 @@ async function refresh() {
   const p = d.profile || {};
   $('weightStat').textContent = ws.length ? `${fmt(ws.at(-1).weight)} kg` : '—';
   $('goalStat').textContent = p.goal ? `${fmt(p.goal)} kg` : '—';
-  $('mealStat').textContent = ms.length;
   const today = new Date().toLocaleDateString('en-CA');
   const todays = ms.filter((x) => new Date(x.at).toLocaleDateString('en-CA') === today);
+  $('mealStat').textContent = todays.length;
+  $('dayTitle').textContent = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
   const known = todays.filter((x) => x.calorias_min != null && x.calorias_max != null);
-  $('todayStat').textContent = known.length ? `${fmt(known.reduce((a, x) => a + (Number(x.calorias_min) + Number(x.calorias_max)) / 2, 0))} kcal` : '—';
+  const todayKcal = known.reduce((a,x)=>a+(Number(x.calorias_min)+Number(x.calorias_max))/2,0);
+  $('todayStat').textContent = `${fmt(todayKcal)} kcal`;
+  $('dayTotal').textContent = `${fmt(todayKcal)} kcal`;
   $('profileForm').elements.namedItem('name').value = p.name || '';
   $('profileForm').elements.namedItem('height').value = p.height || '';
   $('profileForm').elements.namedItem('goal').value = p.goal || '';
+  $('profileForm').elements.namedItem('maintenance_kcal').value = p.maintenance_kcal || '';
   draw(ws);
   $('weightHistory').textContent = ws.length ? `${ws.length} registros • último em ${day(ws.at(-1).at)}` : 'Sem registros ainda.';
   renderMeals(ms);
+  await loadMonthly();
+}
+
+
+async function loadMonthly(){
+  const picker=$('monthPicker');
+  const month=picker.value || new Date().toLocaleDateString('sv-SE').slice(0,7);
+  const data=await req(`/api/evolucao/resumo-mensal?mes=${encodeURIComponent(month)}`);
+  $('monthlyTotal').textContent=`${fmt(data.total_kcal)} kcal`;
+  $('monthlyDays').textContent=String(data.dias_registrados);
+  $('monthlyLoss').textContent=data.perda_teorica_kg==null?'Não calculada':`${fmt(data.perda_teorica_kg)} kg`;
+  const max=Math.max(1,...data.dias.map(d=>d.kcal));
+  $('monthlyBars').innerHTML=data.dias.map(d=>`<div class="month-day" title="${esc(d.data)}: ${fmt(d.kcal)} kcal"><span style="height:${Math.max(2,d.kcal/max*108)}px" class="month-bar ${d.refeicoes?'has-data':'no-data'}"></span><small>${esc(d.data.slice(-2))}</small></div>`).join('');
+  $('monthlyExplanation').textContent=data.manutencao_kcal
+    ? `*Simulação com gasto informado de ${fmt(data.manutencao_kcal)} kcal/dia, somente nos ${data.dias_registrados} dias com refeições. Pode ser muito diferente da perda real. Registre seu peso para acompanhar mudanças reais.`
+    : '*Para visualizar uma simulação teórica de perda de peso, informe seu gasto energético diário estimado em “Meu objetivo”. A perda real exige acompanhamento do peso; dias sem refeições podem ser dias sem registros.';
 }
 
 function bindEvents() {
+  $('monthPicker').addEventListener('change',()=>loadMonthly().catch(err=>toast(err.message,true)));
   $('foodCategory').addEventListener('change',populateFoods);
   $('foodSelect').addEventListener('change',updateFoodInputs);
   $('foodPortion').addEventListener('change',updatePortionPreview);
@@ -278,7 +299,8 @@ function bindEvents() {
         body: JSON.stringify({
           name: f.elements.namedItem('name').value,
           height: f.elements.namedItem('height').value,
-          goal: f.elements.namedItem('goal').value
+          goal: f.elements.namedItem('goal').value,
+          maintenance_kcal: f.elements.namedItem('maintenance_kcal').value
         })
       });
       $('profileMsg').textContent = 'Objetivo salvo!';
@@ -292,6 +314,7 @@ function bindEvents() {
 
 }
 
+$('monthPicker').value = new Date().toLocaleDateString('sv-SE').slice(0,7);
 populateLists();
 bindEvents();
 refresh().catch(err=>toast('Não foi possível carregar o diário: '+err.message,true));

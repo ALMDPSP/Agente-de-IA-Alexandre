@@ -42,13 +42,13 @@
     <div class="welcome-art" aria-hidden="true">🥗<span>Mais controle no seu dia a dia</span></div>
   </section>
 
-  <div id="notice" class="notice" role="status" hidden></div>
+  <div id="notice" class="notice" role="status" hidden></div><div class="day-indicator"><div><span class="eyebrow">DIÁRIO DE HOJE</span><h2 id="dayTitle">Carregando data...</h2><p>Ao virar o dia, começamos uma nova contagem. Seu histórico permanece salvo.</p></div><div class="day-count"><strong id="dayTotal">0 kcal</strong><span>Consumidas hoje</span></div></div>
 
   <section class="metrics" aria-label="Resumo">
     <article class="metric"><span>⚖️ Peso atual</span><strong id="weightStat">—</strong><small>Último registro</small></article>
     <article class="metric"><span>🎯 Minha meta</span><strong id="goalStat">—</strong><small>Objetivo pessoal</small></article>
-    <article class="metric"><span>🍽️ Refeições</span><strong id="mealStat">0</strong><small>Registros no diário</small></article>
-    <article class="metric"><span>🔥 Calorias hoje</span><strong id="todayStat">—</strong><small>Estimativas registradas</small></article>
+    <article class="metric"><span>🍽️ Refeições hoje</span><strong id="mealStat">0</strong><small>Registros do dia atual</small></article>
+    <article class="metric"><span>🔥 Calorias hoje</span><strong id="todayStat">—</strong><small>Reinicia a cada novo dia</small></article>
   </section>
 
   <div class="content-grid">
@@ -125,7 +125,7 @@
         <form id="profileForm">
           <div class="field"><label>Nome</label><input name="name" maxlength="70" placeholder="Como quer ser chamado"></div>
           <div class="two-fields"><div><label>Altura (cm)</label><input name="height" type="number" min="90" max="230" required></div><div><label>Meta (kg)</label><input name="goal" type="number" min="25" max="350" step="0.1" required></div></div>
-          <button class="btn-outline" type="submit">Salvar objetivo</button>
+          <div class="field"><label for="maintenanceKcal">Gasto energético diário estimado (kcal/dia, opcional)</label><input id="maintenanceKcal" name="maintenance_kcal" type="number" min="1000" max="6000" step="1" placeholder="Informe somente se tiver uma estimativa confiável"><p class="helper">Não é meta de alimentação. Usado apenas para uma simulação teórica de perda de peso.</p></div><button class="btn-outline" type="submit">Salvar objetivo</button>
         </form>
         <p id="profileMsg" class="feedback"></p>
       </section>
@@ -133,6 +133,12 @@
     </aside>
   </div>
 
+  <section class="panel monthly-panel" aria-label="Resumo mensal de calorias">
+   <div class="monthly-head"><div><span class="eyebrow">ACOMPANHAMENTO MENSAL</span><h2>📅 Seu consumo mês a mês</h2><p>Total de calorias registradas por dia, sem apagar os dias anteriores.</p></div><div><label for="monthPicker">Mês</label><input id="monthPicker" type="month"></div></div>
+   <div class="monthly-metrics"><div><span>Calorias registradas no mês</span><strong id="monthlyTotal">—</strong></div><div><span>Dias com refeições registradas</span><strong id="monthlyDays">—</strong></div><div><span>Possível perda teórica*</span><strong id="monthlyLoss">—</strong></div></div>
+   <div id="monthlyBars" class="monthly-bars" aria-label="Gráfico diário de calorias"></div>
+   <p id="monthlyExplanation" class="helper">*A projeção depende de uma estimativa de gasto energético diário, não é uma previsão clínica. Dias sem registros não entram no cálculo.</p>
+  </section>
   <div class="content-grid lower">
     <section class="panel"><h2>📈 Evolução do peso</h2><canvas id="weightChart" width="800" height="210" aria-label="Gráfico de evolução do peso"></canvas><p id="weightHistory" class="helper">Ainda sem registros.</p></section>
     <section class="panel"><h2>🍽️ Minhas refeições</h2><div id="meals" class="meal-history"><p class="empty">Seu diário começa aqui.</p></div></section>

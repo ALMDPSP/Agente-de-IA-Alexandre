@@ -1,6 +1,7 @@
 # MVP de diário alimentar
 import base64, json, os, re, threading, uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 import requests
 from flask import jsonify, render_template, request, current_app
@@ -58,6 +59,48 @@ def register_health_routes(app):
     @login_required
     def evolucao_estado():return jsonify(_state())
 
+    @app.route('/api/evolucao/resumo-mensal')
+    @login_required
+    def evolucao_resumo_mensal():
+        from calendar import monthrange
+        tz = ZoneInfo('America/Sao_Paulo')
+        today = datetime.now(tz).date()
+        month = request.args.get('mes', today.strftime('%Y-%m'))
+        if not re.fullmatch(r'\d{4}-(0[1-9]|1[0-2])', month):
+            return jsonify(error='Informe mês válido: AAAA-MM.'), 400
+        year, mm = map(int, month.split('-'))
+        if not 2020 <= year <= 2100: return jsonify(error='Ano inválido.'), 400
+        state = _state()
+        days = {f'{month}-{n:02d}': {'kcal': 0, 'refeicoes': 0} for n in range(1, monthrange(year, mm)[1]+1)}
+        for meal in state.get('meals', []):
+            try:
+                dt = datetime.fromisoformat(str(meal['at']).replace('Z','+00:00'))
+                if dt.tzinfo is None: dt=dt.replace(tzinfo=timezone.utc)
+                key = dt.astimezone(tz).date().isoformat()
+                if key not in days: continue
+                a, b = meal.get('calorias_min'), meal.get('calorias_max')
+                if a is None or b is None: continue
+                kcal=(float(a)+float(b))/2
+                if not 0 <= kcal <= 15000:continue
+                days[key]['kcal'] += kcal
+                days[key]['refeicoes'] += 1
+            except (KeyError,ValueError,TypeError,OverflowError): continue
+        total = round(sum(v['kcal'] for v in days.values()))
+        tracked = sum(v['refeicoes']>0 for v in days.values())
+        last = today.isoformat() if month == today.strftime('%Y-%m') else max(days)
+        before_today = [k for k in days if k<=last]
+        maintenance = (state.get('profile') or {}).get('maintenance_kcal')
+        try:
+            maintenance=float(maintenance)
+            if not 1000<=maintenance<=6000: maintenance=None
+        except (ValueError,TypeError): maintenance=None
+        # A projeção é só ilustrativa, apenas com os dias registrados e gasto informado.
+        deficit = sum(maintenance - days[k]['kcal'] for k in before_today if days[k]['refeicoes']>0) if maintenance else None
+        projection = round(max(0,deficit)/7700,2) if deficit is not None else None
+        return jsonify(mes=month, hoje=today.isoformat(), total_kcal=total, dias_registrados=tracked,
+            manutencao_kcal=maintenance, deficit_estimado_kcal=round(deficit) if deficit is not None else None,
+            perda_teorica_kg=projection, dias=[dict(data=k,kcal=round(v['kcal']),refeicoes=v['refeicoes']) for k,v in days.items()])
+
     @app.route('/api/evolucao/perfil',methods=['POST'])
     @login_required
     def evolucao_perfil():
@@ -67,7 +110,14 @@ def register_health_routes(app):
             goal=float(data.get('goal',0));height=float(data.get('height',0))
             if not (25<=goal<=350 and 90<=height<=230):raise ValueError()
         except (ValueError,TypeError):return jsonify(error='Informe altura e meta válidas.'),400
-        _update(lambda state: state.update(profile={'name':name,'goal':goal,'height':height}))
+        maintenance = data.get('maintenance_kcal')
+        if maintenance not in (None, ''):
+            try:
+                maintenance=float(maintenance)
+                if not 1000 <= maintenance <= 6000: raise ValueError()
+            except (TypeError,ValueError): return jsonify(error='Gasto diário estimado deve ficar entre 1000 e 6000 kcal.'),400
+        else: maintenance = None
+        _update(lambda state: state.update(profile={'name':name,'goal':goal,'height':height,'maintenance_kcal':maintenance}))
         return jsonify(ok=True)
 
     @app.route('/api/evolucao/peso',methods=['POST'])
