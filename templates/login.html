@@ -1,174 +1,67 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#050b15">
-    <title>Minha Evolução IA | Login</title>
-
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='icons/alexandre-ai.svg') }}">
-    <link rel="icon" type="image/png" sizes="64x64" href="{{ url_for('static', filename='icons/favicon-64.png') }}">
-    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
-    <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Minha Evolução IA">
-    <meta name="mobile-web-app-capable" content="yes">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
-<script src="{{ url_for('static', filename='js/pwa.js') }}" defer></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4faf5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Minha Evolução IA">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='icons/icon-192.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/login-wellness.css') }}">
+  <script src="{{ url_for('static', filename='js/pwa.js') }}" defer></script>
+  <title>Entrar | Minha Evolução IA</title>
 </head>
-<body class="auth-body auth-futuristic-body">
-    <div class="auth-grid-bg" aria-hidden="true"></div>
-    <div class="auth-aurora auth-aurora-a" aria-hidden="true"></div>
-    <div class="auth-aurora auth-aurora-b" aria-hidden="true"></div>
-    <div class="auth-noise" aria-hidden="true"></div>
-    <canvas class="matrix-canvas" id="matrixCanvas" aria-hidden="true"></canvas>
+<body>
+  <main class="layout">
+    <section class="intro" aria-label="Apresentação do aplicativo">
+      <a class="identity" href="{{ url_for('login') }}">
+        <img src="{{ url_for('static', filename='icons/wellness-logo.svg') }}" alt="" width="48" height="48">
+        <span>Minha <strong>Evolução IA</strong></span>
+      </a>
+      <div class="intro-content">
+        <div class="chip">✦ Cuidar de você ficou mais simples</div>
+        <h1>Sua evolução começa com <em>pequenas escolhas.</em></h1>
+        <p>Fotografe suas refeições, acompanhe seu peso e conte com a inteligência artificial para construir hábitos mais saudáveis.</p>
+        <div class="benefits">
+          <div><span class="benefit-icon">📸</span><span><strong>Foto do prato</strong><small>Registre o que você come</small></span></div>
+          <div><span class="benefit-icon">📈</span><span><strong>Seu progresso</strong><small>Visualize cada conquista</small></span></div>
+          <div><span class="benefit-icon">🥗</span><span><strong>Apoio da IA</strong><small>Receba sugestões personalizadas</small></span></div>
+        </div>
+      </div>
+      <p class="intro-foot">Um dia de cada vez. No seu ritmo. 💚</p>
+    </section>
 
-    <main class="auth-shell auth-shell-v2">
-        <section class="auth-stage-panel">
-            <div class="auth-brand-row">
-                <a class="brand brand-large" href="{{ url_for('login') }}">
-                    <span class="brand-mark brand-mark-image"><img src="{{ url_for('static', filename='icons/alexandre-ai.svg') }}" alt=""></span>
-                    <span>Alexandre <strong>AI</strong></span>
-                </a>
-                <span class="system-online"><i></i> Core online</span>
-            </div>
-
-            <div class="auth-stage-copy">
-                <span class="eyebrow">DARK AI SECURITY ACCESS</span>
-                <h1>Agente de IA <span>próprio para Alexandre.</span></h1>
-                <p>Ambiente pessoal com visual dark, autenticação segura e acesso dedicado ao agente de IA próprio para Alexandre.</p>
-
-                <div class="security-pills futuristic-pills">
-                    <span>◆ Identidade protegida</span>
-                    <span>◆ Login com senha</span>
-                    <span>◆ Base privada de conhecimento</span>
-                </div>
-            </div>
-
-            <div class="auth-holo-stage" aria-hidden="true">
-                <div class="holo-grid"></div>
-                <div class="holo-orbit holo-orbit-a"></div>
-                <div class="holo-orbit holo-orbit-b"></div>
-                <div class="holo-orbit holo-orbit-c"></div>
-                <div class="holo-core-wrap">
-                    <div class="holo-core">
-                        <span>AI</span>
-                    </div>
-                    <div class="holo-pulse"></div>
-                </div>
-                <span class="holo-node hn-a"></span>
-                <span class="holo-node hn-b"></span>
-                <span class="holo-node hn-c"></span>
-                <span class="holo-node hn-d"></span>
-                <span class="holo-node hn-e"></span>
-                <span class="holo-scan"></span>
-            </div>
-
-            <div class="auth-status-grid">
-                <div class="auth-status-card">
-                    <small>SECURITY</small>
-                    <strong>Acesso protegido</strong>
-                </div>
-                <div class="auth-status-card">
-                    <small>AI CORE</small>
-                    <strong>READY</strong>
-                </div>
-                <div class="auth-status-card">
-                    <small>MODE</small>
-                    <strong>PRIVATE</strong>
-                </div>
-            </div>
-        </section>
-
-        <section class="auth-form-panel auth-panel-v2">
-            <div class="auth-card auth-card-v2">
-                <div class="auth-card-header auth-card-header-v2">
-                    <div class="mobile-brand brand">
-                        <span class="brand-mark brand-mark-image"><img src="{{ url_for('static', filename='icons/alexandre-ai.svg') }}" alt=""></span>
-                        <span>Alexandre <strong>AI</strong></span>
-                    </div>
-
-                    <div class="auth-icon-lock auth-icon-lock-v2">◈</div>
-                    <span class="eyebrow">LOGIN</span>
-                    <h2>Entrar no ambiente</h2>
-                    <p>Digite seu e-mail e senha para acessar o agente de IA próprio para Alexandre.</p>
-                </div>
-
-                <div class="auth-progress auth-progress-login">
-                    <span class="step active"><i></i> Credenciais</span>
-                    <span class="line"></span>
-                    <span class="step pending"><i></i> Dashboard</span>
-                </div>
-
-                {% if error %}
-                    <div class="alert auth-alert">{{ error }}</div>
-                {% endif %}
-
-                <form method="post" class="login-form auth-login-form" autocomplete="on">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
-                    <label for="email">E-mail</label>
-                    <div class="input-wrap futuristic-input input-glow">
-                        <span class="input-icon">◎</span>
-                        <input id="email" name="email" type="email" autocomplete="email" placeholder="seu@email.com" required autofocus>
-                    </div>
-
-                    <label for="password">Senha</label>
-                    <div class="input-wrap futuristic-input input-glow">
-                        <span class="input-icon">⌁</span>
-                        <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Digite sua senha" required>
-                        <button class="password-toggle" type="button" data-password-toggle aria-label="Mostrar senha">◉</button>
-                    </div>
-
-                    <div class="form-row auth-options">
-                        <label class="checkbox">
-                            <input type="checkbox" name="remember">
-                            <span>Manter conectado</span>
-                        </label>
-                    </div>
-
-                    <button class="primary-btn futuristic-btn auth-submit-btn" type="submit">
-                        <span>Acessar ambiente</span>
-                        <b>→</b>
-                    </button>
-                </form>
-
-                <div class="auth-divider"><span>PROTOCOLO DE SEGURANÇA</span></div>
-
-                <div class="security-note auth-security-note auth-security-note-v2">
-                    <span class="shield-symbol">◇</span>
-                    <div>
-                        <strong>Acesso protegido por senha</strong>
-                        <small>
-                            Utilize sua senha para acessar o aplicativo.
-                        </small>
-                    </div>
-                </div>
-
-                <div class="auth-mini-grid">
-                    <div>
-                        <small>LATÊNCIA</small>
-                        <strong>LOW</strong>
-                    </div>
-                    <div>
-                        <small>SESSÃO</small>
-                        <strong>ENCRYPTED</strong>
-                    </div>
-                    <div>
-                        <small>FALLBACK IA</small>
-                        <strong>ON</strong>
-                    </div>
-                </div>
-
-                <div class="auth-card-footer">
-                    <span>Agente IA Alexandre</span>
-                    <span>Agente de IA próprio para Alexandre</span>
-                </div>
-            </div>
-        </section>
-    </main>
-
-    <script src="{{ url_for('static', filename='js/login.js') }}"></script>
+    <section class="form-area" aria-label="Acesso à conta">
+      <div class="mobile-identity identity">
+        <img src="{{ url_for('static', filename='icons/wellness-logo.svg') }}" alt="" width="44" height="44">
+        <span>Minha <strong>Evolução IA</strong></span>
+      </div>
+      <div class="login-card">
+        <div class="card-symbol"><img src="{{ url_for('static', filename='icons/wellness-logo.svg') }}" alt="" width="42" height="42"></div>
+        <p class="welcome">BEM-VINDO DE VOLTA</p>
+        <h2>Continue sua evolução</h2>
+        <p class="description">Entre na sua conta para acompanhar sua jornada.</p>
+        {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+        <form method="post" action="{{ url_for('login') }}" autocomplete="on">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label for="email">E-mail</label>
+          <input id="email" name="email" type="email" placeholder="seu@email.com" autocomplete="email" inputmode="email" required autofocus>
+          <div class="password-head"><label for="password">Senha</label></div>
+          <div class="password-field">
+            <input id="password" name="password" type="password" placeholder="Digite sua senha" autocomplete="current-password" required>
+            <button class="show-pass" type="button" data-password-toggle aria-label="Mostrar senha" aria-pressed="false">Mostrar</button>
+          </div>
+          <label class="remember"><input type="checkbox" name="remember"><span>Manter conectado</span></label>
+          <button class="submit" type="submit">Entrar no aplicativo <span aria-hidden="true">→</span></button>
+        </form>
+        <p class="privacy">🔒 Sua jornada é pessoal. Mantenha sua senha protegida.</p>
+      </div>
+      <p class="footer">Minha Evolução IA · Saúde e hábitos em equilíbrio</p>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='js/login.js') }}"></script>
 </body>
 </html>
