@@ -1,5 +1,5 @@
 /* PWA: cache exclusivamente para recursos públicos e tela offline. */
-const CACHE = 'minha-evolucao-pwa-v1';
+const CACHE = 'meu-controle-peso-pwa-v4';
 const ASSETS = ['/static/offline.html','/static/icons/icon-192.png','/static/icons/icon-512.png','/static/icons/apple-touch-icon.png'];
 self.addEventListener('install', event => {event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting()));});
 self.addEventListener('activate', event => {event.waitUntil(Promise.all([caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))),self.clients.claim()]));});
