@@ -13,11 +13,18 @@ from pathlib import Path
 import requests
 from docx import Document
 from dotenv import load_dotenv
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for, abort
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_wtf.csrf import CSRFProtect, CSRFError
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.exceptions import ServiceUnavailable
+import psycopg
+from psycopg.rows import dict_row
 from openpyxl import load_workbook
 from pypdf import PdfReader
+
+from wellness_storage import init_wellness
+from login_security import init_limits, allow_attempt
 
 from storage import (
     add_chat_message, add_history, clear_chat, create_project, storage_configured,
@@ -41,6 +48,9 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
     MAX_CONTENT_LENGTH=15 * 1024 * 1024,
 )
+
+if os.getenv("RENDER") and app.config["SECRET_KEY"] == "dev-change-me":
+    raise RuntimeError("Configure uma SECRET_KEY forte no Render.")
 
 if os.getenv("RENDER"):
     app.config["SESSION_COOKIE_SECURE"] = True
@@ -94,22 +104,77 @@ SUPPORTED_EXTENSIONS = SUPPORTED_TEXT_EXTENSIONS | SUPPORTED_DOCUMENT_EXTENSIONS
 
 
 class EnvUser(UserMixin):
-    def __init__(self):
-        self.id = "admin"
-        self.name = os.getenv("ADMIN_NAME", "Alexandre")
-        self.email = os.getenv("ADMIN_EMAIL", "").strip().lower()
-        self.role = "admin"
+    def __init__(self, user_id="admin", name=None, email=None, role="user", active=True):
+        self.id = str(user_id)
+        self.name = name or os.getenv("ADMIN_NAME", "Alexandre")
+        self.email = email or os.getenv("ADMIN_EMAIL", "").strip().lower()
+        self.role = "admin" if self.id == "admin" else role
+        self.active = active
+
+    @property
+    def is_active(self):
+        return bool(self.active)
 
 
 def get_admin_user():
-    return EnvUser()
+    return EnvUser(role="admin")
+
+
+def account_connection():
+    url = (os.getenv("DATABASE_URL") or "").strip()
+    if not url:
+        raise RuntimeError("Configure DATABASE_URL com PostgreSQL persistente para habilitar cadastros.")
+    return psycopg.connect(url, row_factory=dict_row, connect_timeout=10)
+
+
+def init_accounts():
+    with account_connection() as conn:
+        conn.execute("""CREATE TABLE IF NOT EXISTS wellness_accounts (
+          id TEXT PRIMARY KEY, name VARCHAR(100) NOT NULL,
+          email VARCHAR(254) NOT NULL UNIQUE, password_hash TEXT NOT NULL,
+          status VARCHAR(12) NOT NULL DEFAULT 'pending'
+            CHECK (status IN ('pending','active','blocked')),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""")
+
+
+def get_account_by_id(user_id):
+    with account_connection() as conn:
+        return conn.execute("SELECT id,name,email,status FROM wellness_accounts WHERE id=%s", (user_id,)).fetchone()
+
+
+@app.before_request
+def restrict_legacy_agent_routes():
+    """Non-admin accounts must never access the legacy personal-agent APIs/files."""
+    if not current_user.is_authenticated or current_user.get_id() == 'admin':
+        return None
+    path = request.path
+    allowed = ('/evolucao', '/api/evolucao/', '/logout', '/static/')
+    if path == '/dashboard' or any(path.startswith(p) for p in allowed):
+        return None
+    abort(403)
 
 
 @login_manager.user_loader
 def load_user(user_id):
     if user_id == "admin":
         return get_admin_user()
+    try:
+        account = get_account_by_id(user_id)
+        if account and account["status"] == "active":
+            return EnvUser(account["id"], account["name"], account["email"], active=True)
+    except Exception:
+        logger.exception("Falha ao carregar conta")
     return None
+
+
+try:
+    if os.getenv("DATABASE_URL"):
+        init_accounts()
+        init_wellness()
+        init_limits()
+except Exception:
+    logger.exception("Não foi possível inicializar cadastro de usuários")
 
 
 def env_bool(name, default=False):
@@ -568,6 +633,14 @@ def login():
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         remember = request.form.get("remember") == "on"
+        try:
+            # Separate IP-wide and account-based thresholds.
+            if not (allow_attempt('login-ip', request.remote_addr, limit=25) and
+                    allow_attempt('login-account', 'all', email, limit=10)):
+                return render_template('login.html', error='Muitas tentativas. Tente novamente em 15 minutos.'), 429
+        except Exception:
+            logger.exception('Limite de login indisponível')
+            return render_template('login.html', error='Login temporariamente indisponível.'), 503
 
         admin_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
         admin_password = os.getenv("ADMIN_PASSWORD", "")
@@ -579,9 +652,89 @@ def login():
             login_user(get_admin_user(), remember=remember)
             return redirect(url_for("dashboard"))
 
-        error = "E-mail ou senha inválidos."
+        try:
+            with account_connection() as conn:
+                row = conn.execute("SELECT id,name,email,password_hash,status FROM wellness_accounts WHERE email=%s", (email,)).fetchone()
+            if row and check_password_hash(row["password_hash"], password):
+                if row["status"] == "active":
+                    login_user(EnvUser(row["id"], row["name"], row["email"]), remember=remember)
+                    return redirect(url_for("dashboard"))
+                error = "Sua conta está aguardando aprovação." if row["status"] == "pending" else "Sua conta está bloqueada."
+            else:
+                error = "E-mail ou senha inválidos."
+        except Exception:
+            logger.exception("Falha no login de usuário")
+            error = "Serviço de contas indisponível. Tente mais tarde."
 
     return render_template("login.html", error=error)
+
+
+@app.route("/cadastro", methods=["GET", "POST"])
+def cadastro():
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+    error = None
+    if request.method == "POST":
+        try:
+            if not allow_attempt('register-ip', request.remote_addr, limit=5, minutes=60):
+                return render_template('cadastro.html', error='Limite de cadastros atingido. Tente novamente mais tarde.', success=False), 429
+        except Exception:
+            logger.exception('Limite de cadastro indisponível')
+            return render_template('cadastro.html', error='Cadastro temporariamente indisponível.', success=False), 503
+        name = request.form.get("name", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        if not 2 <= len(name) <= 100 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) or len(email) > 254:
+            error = "Informe nome e e-mail válidos."
+        elif len(password) < 12 or len(password) > 128:
+            error = "A senha precisa ter entre 12 e 128 caracteres."
+        elif email == os.getenv("ADMIN_EMAIL", "").strip().lower():
+            error = "Este e-mail não está disponível."
+        else:
+            try:
+                with account_connection() as conn:
+                    existing = conn.execute("SELECT id FROM wellness_accounts WHERE email=%s", (email,)).fetchone()
+                    if existing:
+                        error = "Este e-mail já possui um cadastro."
+                    else:
+                        conn.execute("INSERT INTO wellness_accounts (id,name,email,password_hash,status) VALUES (%s,%s,%s,%s,'pending')", (str(uuid.uuid4()), name, email, generate_password_hash(password)))
+                if not error:
+                    return render_template("cadastro.html", success=True)
+            except Exception:
+                logger.exception("Falha ao criar cadastro")
+                error = "Cadastro indisponível. Verifique a configuração do banco de dados."
+    return render_template("cadastro.html", error=error, success=False)
+
+
+@app.route("/admin/usuarios")
+@login_required
+def admin_usuarios():
+    if current_user.get_id() != "admin":
+        abort(403)
+    try:
+        with account_connection() as conn:
+            rows = conn.execute("SELECT id,name,email,status,created_at FROM wellness_accounts ORDER BY created_at DESC").fetchall()
+        return render_template("usuarios.html", users=rows, error=None)
+    except Exception:
+        logger.exception("Erro ao consultar usuários")
+        return render_template("usuarios.html", users=[], error="Configure DATABASE_URL para gerenciar contas.")
+
+
+@app.route("/admin/usuarios/<user_id>/status", methods=["POST"])
+@login_required
+def admin_status_usuario(user_id):
+    if current_user.get_id() != "admin":
+        abort(403)
+    status = request.form.get("status", "")
+    if status not in {"active", "blocked", "pending"}:
+        abort(400)
+    try:
+        with account_connection() as conn:
+            conn.execute("UPDATE wellness_accounts SET status=%s WHERE id=%s", (status,user_id))
+    except Exception:
+        logger.exception("Erro ao alterar status")
+        abort(503)
+    return redirect(url_for("admin_usuarios"))
 
 
 @app.route("/dashboard")

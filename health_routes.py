@@ -6,31 +6,15 @@ import requests
 from flask import jsonify, render_template, request
 from flask_login import login_required, current_user
 
-_LOCK=threading.RLock()
+from wellness_storage import read_state, update_state
+
 MAX_IMG=5*1024*1024
 
-def _store_path():
-    data_dir=Path(os.getenv('DATA_DIR','data'))
-    data_dir.mkdir(parents=True,exist_ok=True)
-    return data_dir / 'evolucao_ia.json'
+def _user(): return str(current_user.get_id())
 
-def _read_all():
-    p=_store_path()
-    if not p.exists():return {}
-    try:return json.loads(p.read_text(encoding='utf-8'))
-    except (ValueError,OSError):return {}
+def _state(): return read_state(_user())
 
-def _user():return str(current_user.get_id())
-
-def _state():
-    return _read_all().get(_user(),{'meals':[],'weights':[],'profile':{}})
-
-def _write_state(state):
-    with _LOCK:
-        p=_store_path();all_data=_read_all();all_data[_user()]=state
-        temp=p.with_suffix('.tmp')
-        temp.write_text(json.dumps(all_data,ensure_ascii=False,indent=2),encoding='utf-8')
-        os.replace(temp,p)
+def _update(mutator): return update_state(_user(), mutator)
 
 def _gemini(parts,prompt):
     key=(os.getenv('GEMINI_API_KEY') or '').strip()
@@ -62,14 +46,14 @@ def register_health_routes(app):
     @app.route('/api/evolucao/perfil',methods=['POST'])
     @login_required
     def evolucao_perfil():
-        data=request.get_json(silent=True) or {};state=_state()
+        data=request.get_json(silent=True) or {}
         name=str(data.get('name',''))[:70]
         try:
             goal=float(data.get('goal',0));height=float(data.get('height',0))
             if not (25<=goal<=350 and 90<=height<=230):raise ValueError()
         except (ValueError,TypeError):return jsonify(error='Informe altura e meta válidas.'),400
-        state['profile']={'name':name,'goal':goal,'height':height}
-        _write_state(state);return jsonify(ok=True)
+        _update(lambda state: state.update(profile={'name':name,'goal':goal,'height':height}))
+        return jsonify(ok=True)
 
     @app.route('/api/evolucao/peso',methods=['POST'])
     @login_required
@@ -79,8 +63,8 @@ def register_health_routes(app):
             w=float(data.get('weight'))
             if not 25<=w<=350:raise ValueError()
         except (ValueError,TypeError):return jsonify(error='Peso inválido.'),400
-        state=_state();entry={'id':str(uuid.uuid4()),'weight':round(w,1),'at':datetime.now(timezone.utc).isoformat()}
-        state.setdefault('weights',[]).append(entry);_write_state(state);return jsonify(entry),201
+        entry={'id':str(uuid.uuid4()),'weight':round(w,1),'at':datetime.now(timezone.utc).isoformat()}
+        _update(lambda state: state.setdefault('weights',[]).append(entry));return jsonify(entry),201
 
     @app.route('/api/evolucao/refeicao',methods=['POST'])
     @login_required
@@ -99,7 +83,7 @@ def register_health_routes(app):
             if not isinstance(foods,list):foods=[]
             entry={'id':str(uuid.uuid4()),'kind':kind,'at':datetime.now(timezone.utc).isoformat(),'alimentos':[str(x)[:100] for x in foods[:20]],'calorias_min':result.get('calorias_min'),'calorias_max':result.get('calorias_max'),'observacoes':str(result.get('observacoes',''))[:1000],'sugestao':str(result.get('sugestao',''))[:1000]}
             # A imagem não é salva. Armazenamos somente a análise resumida.
-            state=_state();state.setdefault('meals',[]).append(entry);_write_state(state)
+            _update(lambda state: state.setdefault('meals',[]).append(entry))
             return jsonify(entry),201
         except (RuntimeError,ValueError,requests.RequestException) as exc:return jsonify(error=str(exc)[:220]),502
 
