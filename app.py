@@ -142,6 +142,8 @@ def init_accounts():
             CHECK (status IN ('pending','active','blocked')),
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )""")
+        conn.execute("ALTER TABLE wellness_accounts ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ")
+        conn.execute("ALTER TABLE wellness_accounts ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ")
         conn.execute("ALTER TABLE wellness_accounts ADD COLUMN IF NOT EXISTS google_sub TEXT")
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS wellness_google_sub_uq ON wellness_accounts (google_sub) WHERE google_sub IS NOT NULL")
 
@@ -696,6 +698,8 @@ def login():
             if row and row["password_hash"] != "!google-only" and check_password_hash(row["password_hash"], password):
                 if row["status"] == "active":
                     login_user(EnvUser(row["id"], row["name"], row["email"]), remember=remember)
+                    with account_connection() as conn:
+                        conn.execute("UPDATE wellness_accounts SET last_login_at=NOW(), last_seen_at=NOW() WHERE id=%s", (row["id"],))
                     return redirect(url_for("dashboard"))
                 error = "Sua conta está aguardando aprovação." if row["status"] == "pending" else "Sua conta está bloqueada."
             else:
@@ -779,6 +783,8 @@ def google_callback():
             if row["status"] != "active":
                 return render_template("login.html", error="Sua conta está bloqueada."), 403
             login_user(EnvUser(row["id"], row["name"], row["email"]))
+            with account_connection() as conn:
+                conn.execute("UPDATE wellness_accounts SET last_login_at=NOW(), last_seen_at=NOW() WHERE id=%s", (row["id"],))
             return redirect(url_for("dashboard"))
     except (requests.RequestException, ValueError, KeyError, psycopg.Error):
         logger.exception("Falha no login via Google")
@@ -829,7 +835,9 @@ def admin_usuarios():
         abort(403)
     try:
         with account_connection() as conn:
-            rows = conn.execute("SELECT id,name,email,status,created_at FROM wellness_accounts ORDER BY created_at DESC").fetchall()
+            rows = conn.execute("""SELECT id,name,email,status,created_at,last_login_at,last_seen_at,
+                       (last_seen_at IS NOT NULL AND last_seen_at > NOW() - INTERVAL '3 minutes') AS online
+                       FROM wellness_accounts ORDER BY created_at DESC""").fetchall()
         return render_template("usuarios.html", users=rows, error=None)
     except Exception:
         logger.exception("Erro ao consultar usuários")
@@ -853,6 +861,46 @@ def admin_status_usuario(user_id):
     return redirect(url_for("admin_usuarios"))
 
 
+@app.route("/admin/usuarios/<user_id>/excluir", methods=["POST"])
+@login_required
+def admin_excluir_usuario(user_id):
+    if current_user.get_id() != "admin":
+        abort(403)
+    # Nunca aceitar a exclusão da conta administradora por esta rota.
+    if user_id == "admin" or not user_id or len(user_id) > 100:
+        abort(400)
+    confirmation = request.form.get("confirm_email", "").strip().lower()
+    try:
+        with account_connection() as conn:
+            # Bloqueia a conta durante a exclusão e garante atomicidade.
+            account = conn.execute("SELECT id,email FROM wellness_accounts WHERE id=%s FOR UPDATE", (user_id,)).fetchone()
+            if not account:
+                return redirect(url_for("admin_usuarios"))
+            if confirmation != account["email"]:
+                abort(400, description="Digite o e-mail completo do usuário para confirmar.")
+            conn.execute("DELETE FROM wellness_diaries WHERE user_id=%s", (user_id,))
+            # O acesso deixa de existir assim que a linha é removida; sessões anteriores
+            # deixam de autenticar no próximo request por load_user.
+            conn.execute("DELETE FROM wellness_accounts WHERE id=%s", (user_id,))
+    except Exception:
+        logger.exception("Falha ao excluir usuário e diário")
+        abort(503, description="Não foi possível excluir a conta. Nada foi removido.")
+    return redirect(url_for("admin_usuarios"))
+
+
+@app.route("/api/evolucao/presenca", methods=["POST"])
+@login_required
+def presenca_usuario():
+    if current_user.get_id() != "admin":
+        try:
+            with account_connection() as conn:
+                conn.execute("UPDATE wellness_accounts SET last_seen_at=NOW() WHERE id=%s AND status='active'", (current_user.get_id(),))
+        except Exception:
+            logger.exception("Não foi possível atualizar presença")
+            return jsonify(error="Presença indisponível"), 503
+    return jsonify(ok=True)
+
+
 @app.route("/dashboard")
 @login_required
 def dashboard():
@@ -862,6 +910,12 @@ def dashboard():
 @app.route("/logout", methods=["POST"])
 @login_required
 def logout():
+    if current_user.get_id() != "admin":
+        try:
+            with account_connection() as conn:
+                conn.execute("UPDATE wellness_accounts SET last_seen_at=NULL WHERE id=%s", (current_user.get_id(),))
+        except Exception:
+            logger.exception("Falha ao marcar saída de usuário")
     logout_user()
     return redirect(url_for("login"))
 
