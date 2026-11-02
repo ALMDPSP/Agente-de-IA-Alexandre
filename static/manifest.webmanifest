@@ -1,8 +1,8 @@
 {
   "id": "/evolucao",
-  "name": "Minha Evolução IA",
-  "short_name": "Evolução IA",
-  "description": "Diário alimentar com análise de refeições por inteligência artificial.",
+  "name": "Meu Controle de Peso",
+  "short_name": "Controle de Peso",
+  "description": "Diário alimentar com registro de refeições por porção, acompanhamento de peso e apoio opcional de IA.",
   "lang": "pt-BR",
   "start_url": "/evolucao",
   "scope": "/",

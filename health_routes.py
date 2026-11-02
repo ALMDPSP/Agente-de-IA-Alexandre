@@ -125,19 +125,37 @@ def register_health_routes(app):
         for item in foods:
             if not isinstance(item,dict):return jsonify(error='Alimento inválido.'),400
             name=str(item.get('name','')).strip()[:90]
+            portion_label=str(item.get('portion_label','')).strip()[:70]
             try:
                 quantity=float(item.get('quantity'))
                 kcal100=float(item.get('kcal100'))
+                portions=float(item.get('portions',1) or 1)
+                grams_per_portion=float(item.get('grams_per_portion',quantity) or quantity)
             except (ValueError,TypeError):return jsonify(error='Confira as quantidades e calorias dos alimentos.'),400
             if not name or not 0<quantity<=5000 or not 0<=kcal100<=950:
                 return jsonify(error='Informe alimento, quantidade em gramas e kcal por 100 g válidas.'),400
+            if not 0<portions<=50 or not 0<grams_per_portion<=5000:
+                return jsonify(error='Informe uma porção válida para o alimento.'),400
             kcal=round(quantity*kcal100/100,1)
-            clean.append({'name':name,'quantity_g':round(quantity,1),'kcal_100g':round(kcal100,1),'kcal':kcal})
+            clean.append({
+                'name':name,
+                'quantity_g':round(quantity,1),
+                'kcal_100g':round(kcal100,1),
+                'kcal':kcal,
+                'portion_label':portion_label,
+                'portions':round(portions,2),
+                'grams_per_portion':round(grams_per_portion,1)
+            })
             total+=kcal
         if total>15000:return jsonify(error='Calorias totais fora do intervalo permitido. Revise o registro.'),400
         notes=str(data.get('notes','')).strip()[:600]
+        def _display_food(x):
+            if x.get('portion_label'):
+                q=f"{x['portions']:g} x {x['portion_label']}"
+                return f"{x['name']} ({q} · {x['quantity_g']:g} g)"
+            return f"{x['name']} ({x['quantity_g']:g} g)"
         entry={'id':str(uuid.uuid4()),'kind':kind,'at':datetime.now(timezone.utc).isoformat(),
-               'alimentos':[f"{x['name']} ({x['quantity_g']:g} g)" for x in clean],
+               'alimentos':[_display_food(x) for x in clean],
                'items':clean,'calorias_min':round(total),'calorias_max':round(total),
                'observacoes':notes,'sugestao':'Valor aproximado calculado com os dados informados pelo usuário.',
                'provider':'manual','source':'manual'}

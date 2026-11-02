@@ -1,12 +1,181 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="csrf-token" content="{{ csrf_token() }}"><meta name="theme-color" content="#176b52"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Minha Evolução IA"><link rel="apple-touch-icon" href="{{ url_for('static',filename='icons/apple-touch-icon.png') }}"><link rel="manifest" href="{{ url_for('static',filename='manifest.webmanifest') }}"><link rel="stylesheet" href="{{ url_for('static',filename='css/evolucao-new.css') }}"><title>Meu dia | Minha Evolução IA</title></head><body>
-<header class="topbar"><div class="top-inner"><div class="brand"><span class="brand-mark">✳</span><div><strong>Minha Evolução <em>IA</em></strong><small>Seu cuidado, no seu ritmo</small></div></div><div class="top-actions">{% if current_user.get_id() == 'admin' %}<a class="nav-link" href="{{ url_for('admin_usuarios') }}">⚙ Usuários</a>{% endif %}<form action="/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn-subtle">Sair ↗</button></form></div></div></header>
-<main class="container"><section class="welcome"><div><span class="eyebrow">✦ SEU ESPAÇO DE BEM-ESTAR</span><h1>Um dia de cada vez. <span>Você evolui.</span></h1><p>Registre o que come, acompanhe seu progresso e construa hábitos que cabem na sua rotina.</p></div><div class="welcome-art" aria-hidden="true">🥗<span>Seu prato, suas escolhas</span></div></section>
-<div id="notice" class="notice" role="status" hidden></div>
-<section class="metrics" aria-label="Resumo"><article class="metric"><span>⚖️ Peso atual</span><strong id="weightStat">—</strong><small>Último registro</small></article><article class="metric"><span>🎯 Minha meta</span><strong id="goalStat">—</strong><small>Objetivo pessoal</small></article><article class="metric"><span>🍽️ Refeições</span><strong id="mealStat">0</strong><small>Registros no diário</small></article><article class="metric"><span>🔥 Calorias hoje</span><strong id="todayStat">—</strong><small>Estimativas registradas</small></article></section>
-<div class="content-grid"><section class="panel primary"><div class="section-head"><div><span class="eyebrow">DIÁRIO ALIMENTAR</span><h2>O que você comeu?</h2><p>Você pode registrar manualmente mesmo sem inteligência artificial.</p></div></div>
-<div class="tabs" role="tablist" aria-label="Tipo de registro"><button type="button" class="tab active" data-tab="manual" aria-selected="true">✍️ Preencher alimentos</button><button type="button" class="tab" data-tab="photo" aria-selected="false">📸 Foto com IA</button></div>
-<div id="manualPanel" class="tab-panel"><form id="manualForm"><div class="field"><label for="manualKind">Refeição</label><select id="manualKind"><option>Café da manhã</option><option selected>Almoço</option><option>Lanche</option><option>Jantar</option><option>Ceia</option></select></div><div class="food-finder"><label for="foodSearch">Adicionar alimento</label><input id="foodSearch" list="foodsList" placeholder="Ex.: arroz branco, ovo, banana" autocomplete="off"><datalist id="foodsList"></datalist><div class="two-fields"><div><label for="foodGrams">Quantidade (gramas)</label><input type="number" id="foodGrams" min="1" max="5000" step="1" placeholder="Ex.: 100"></div><div><label for="foodKcal">Calorias / 100 g</label><input type="number" id="foodKcal" min="0" max="950" step="0.1" placeholder="Ex.: 128"></div></div><p class="helper">Valores de referência aproximados. Confira o rótulo ou informe um valor mais adequado ao preparo.</p><button type="button" class="btn-outline" id="addFood">＋ Adicionar ao prato</button></div><div id="selectedFoods" class="selected-foods"><p class="empty">Seu prato ainda está vazio.</p></div><div class="calorie-total"><span>Estimativa do prato</span><strong id="mealTotal">0 kcal</strong></div><div class="field"><label for="mealNotes">Observações (opcional)</label><textarea id="mealNotes" rows="2" placeholder="Ex.: pouco óleo, sem açúcar..."></textarea></div><button class="btn-primary" id="manualSave" type="submit">✓ Salvar refeição</button><p id="manualResult" class="feedback" aria-live="polite"></p></form></div>
-<div id="photoPanel" class="tab-panel" hidden><form id="mealForm"><div class="field"><label>Tipo de refeição</label><select name="kind"><option>Café da manhã</option><option>Almoço</option><option>Lanche</option><option>Jantar</option><option>Ceia</option></select></div><div class="upload"><label for="photo">📷 Fotografar ou escolher imagem</label><input id="photo" name="photo" type="file" accept="image/png,image/jpeg,image/webp" capture="environment" required><img id="preview" alt="Prévia da refeição" hidden></div><button class="btn-primary" id="mealBtn" type="submit">Analisar foto com IA</button></form><div id="mealResult" class="feedback" aria-live="polite"></div><p class="helper">A foto é enviada ao provedor de IA configurado e não fica salva no diário. As calorias são estimativas.</p></div></section>
-<aside class="side-stack"><section class="panel"><div class="section-head"><h2>⚖️ Meu peso</h2></div><form id="weightForm"><label>Peso atual (kg)</label><div class="inline"><input type="number" name="weight" min="25" max="350" step="0.1" placeholder="Ex.: 116,0" required><button class="btn-primary">Registrar</button></div></form><div class="separator"></div><h3>🎯 Meu objetivo</h3><form id="profileForm"><div class="field"><label>Nome</label><input name="name" maxlength="70" placeholder="Como quer ser chamado"></div><div class="two-fields"><div><label>Altura (cm)</label><input name="height" type="number" min="90" max="230" required></div><div><label>Meta (kg)</label><input name="goal" type="number" min="25" max="350" step="0.1" required></div></div><button class="btn-outline" type="submit">Salvar objetivo</button></form><p id="profileMsg" class="feedback"></p></section><section class="panel ai-card"><div class="section-head"><h2>✨ Assistente alimentar</h2></div><div id="aiStatus" class="ai-status">Verificando a IA...</div><p class="helper">Se a IA estiver fora do ar, continue registrando suas refeições manualmente.</p><form id="chatForm"><textarea name="message" rows="3" placeholder="Ex.: Como posso equilibrar meu almoço?" required></textarea><button class="btn-primary" id="chatBtn">Perguntar à IA</button></form><div id="chatAnswer" class="chat-answer" aria-live="polite"></div></section></aside></div>
-<div class="content-grid lower"><section class="panel"><h2>📈 Evolução do peso</h2><canvas id="weightChart" width="800" height="210" aria-label="Gráfico de evolução do peso"></canvas><p id="weightHistory" class="helper">Ainda sem registros.</p></section><section class="panel"><h2>🍽️ Minhas refeições</h2><div id="meals" class="meal-history"><p class="empty">Seu diário começa aqui.</p></div></section></div><p class="privacy-note">🔒 Seus registros são individuais. Valores nutricionais são estimativas educativas e não substituem orientação profissional.</p></main>
-<footer>Todos os direitos reservados • Developed by Alexandre Martins</footer><script src="{{ url_for('static',filename='js/evolucao-new.js') }}" defer></script><script src="{{ url_for('static',filename='js/pwa.js') }}" defer></script></body></html>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="theme-color" content="#176b52">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Meu Controle de Peso">
+  <link rel="apple-touch-icon" href="{{ url_for('static',filename='icons/apple-touch-icon.png') }}">
+  <link rel="manifest" href="{{ url_for('static',filename='manifest.webmanifest') }}">
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/evolucao-new.css') }}">
+  <title>Meu dia | Meu Controle de Peso</title>
+</head>
+<body>
+<header class="topbar">
+  <div class="top-inner">
+    <div class="brand">
+      <span class="brand-mark">⚖</span>
+      <div>
+        <strong>Meu Controle de Peso</strong>
+        <small>Seu cuidado, no seu ritmo</small>
+      </div>
+    </div>
+    <div class="top-actions">
+      {% if current_user.get_id() == 'admin' %}<a class="nav-link" href="{{ url_for('admin_usuarios') }}">⚙ Usuários</a>{% endif %}
+      <form action="/logout" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn-subtle">Sair ↗</button>
+      </form>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+  <section class="welcome">
+    <div>
+      <span class="eyebrow">✦ SEU ESPAÇO DE BEM-ESTAR</span>
+      <h1>Coma melhor, com <span>mais clareza.</span></h1>
+      <p>Registre refeições por alimento e porção, acompanhe seu peso e siga avançando sem depender só da IA.</p>
+    </div>
+    <div class="welcome-art" aria-hidden="true">🥗<span>Mais controle no seu dia a dia</span></div>
+  </section>
+
+  <div id="notice" class="notice" role="status" hidden></div>
+
+  <section class="metrics" aria-label="Resumo">
+    <article class="metric"><span>⚖️ Peso atual</span><strong id="weightStat">—</strong><small>Último registro</small></article>
+    <article class="metric"><span>🎯 Minha meta</span><strong id="goalStat">—</strong><small>Objetivo pessoal</small></article>
+    <article class="metric"><span>🍽️ Refeições</span><strong id="mealStat">0</strong><small>Registros no diário</small></article>
+    <article class="metric"><span>🔥 Calorias hoje</span><strong id="todayStat">—</strong><small>Estimativas registradas</small></article>
+  </section>
+
+  <div class="content-grid">
+    <section class="panel primary">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">DIÁRIO ALIMENTAR</span>
+          <h2>O que você comeu?</h2>
+          <p>Escolha o alimento, a porção e a quantidade. O sistema calcula automaticamente.</p>
+        </div>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Tipo de registro">
+        <button type="button" class="tab active" data-tab="manual" aria-selected="true">✍️ Preencher alimentos</button>
+        <button type="button" class="tab" data-tab="photo" aria-selected="false">📸 Foto com IA</button>
+      </div>
+
+      <div id="manualPanel" class="tab-panel">
+        <form id="manualForm">
+          <div class="field">
+            <label for="manualKind">Refeição</label>
+            <select id="manualKind">
+              <option>Café da manhã</option><option selected>Almoço</option><option>Lanche</option><option>Jantar</option><option>Ceia</option>
+            </select>
+          </div>
+
+          <div class="food-finder">
+            <div class="finder-header">
+              <div>
+                <label for="foodSearch">Adicionar alimento</label>
+                <p class="helper">Escolha um alimento e informe quantas porções você comeu.</p>
+              </div>
+              <span class="pill">Cálculo automático</span>
+            </div>
+
+            <input id="foodSearch" list="foodsList" placeholder="Ex.: arroz branco, ovo, banana" autocomplete="off">
+            <datalist id="foodsList"></datalist>
+
+            <div class="two-fields portion-grid">
+              <div>
+                <label for="foodPortion">Porção</label>
+                <select id="foodPortion"></select>
+              </div>
+              <div>
+                <label for="foodPortionsCount">Quantidade de porções</label>
+                <input type="number" id="foodPortionsCount" min="0.25" max="50" step="0.25" value="1">
+              </div>
+            </div>
+
+            <div class="two-fields" id="customGramsWrap" hidden>
+              <div>
+                <label for="foodGrams">Quantidade (gramas)</label>
+                <input type="number" id="foodGrams" min="1" max="5000" step="1" placeholder="Ex.: 100">
+              </div>
+              <div>
+                <label for="foodKcal">Calorias / 100 g</label>
+                <input type="number" id="foodKcal" min="0" max="950" step="0.1" placeholder="Ex.: 128">
+              </div>
+            </div>
+
+            <div class="portion-preview" id="portionPreview">
+              <div><span>Porção estimada</span><strong id="portionGrams">—</strong></div>
+              <div><span>Calorias do item</span><strong id="portionKcal">—</strong></div>
+            </div>
+
+            <p class="helper">As porções são estimativas práticas para facilitar seu registro. Você pode ajustar o valor por 100 g quando necessário.</p>
+            <button type="button" class="btn-outline" id="addFood">＋ Adicionar ao prato</button>
+          </div>
+
+          <div id="selectedFoods" class="selected-foods"><p class="empty">Seu prato ainda está vazio.</p></div>
+          <div class="calorie-total"><span>Estimativa do prato</span><strong id="mealTotal">0 kcal</strong></div>
+
+          <div class="field">
+            <label for="mealNotes">Observações (opcional)</label>
+            <textarea id="mealNotes" rows="2" placeholder="Ex.: pouco óleo, sem açúcar..."></textarea>
+          </div>
+
+          <button class="btn-primary" id="manualSave" type="submit">✓ Salvar refeição</button>
+          <p id="manualResult" class="feedback" aria-live="polite"></p>
+        </form>
+      </div>
+
+      <div id="photoPanel" class="tab-panel" hidden>
+        <form id="mealForm">
+          <div class="field"><label>Tipo de refeição</label><select name="kind"><option>Café da manhã</option><option>Almoço</option><option>Lanche</option><option>Jantar</option><option>Ceia</option></select></div>
+          <div class="upload"><label for="photo">📷 Fotografar ou escolher imagem</label><input id="photo" name="photo" type="file" accept="image/png,image/jpeg,image/webp" capture="environment" required><img id="preview" alt="Prévia da refeição" hidden></div>
+          <button class="btn-primary" id="mealBtn" type="submit">Analisar foto com IA</button>
+        </form>
+        <div id="mealResult" class="feedback" aria-live="polite"></div>
+        <p class="helper">A foto é enviada ao provedor de IA configurado e não fica salva no diário. As calorias são estimativas.</p>
+      </div>
+    </section>
+
+    <aside class="side-stack">
+      <section class="panel">
+        <div class="section-head"><h2>⚖️ Meu peso</h2></div>
+        <form id="weightForm"><label>Peso atual (kg)</label><div class="inline"><input type="number" name="weight" min="25" max="350" step="0.1" placeholder="Ex.: 116,0" required><button class="btn-primary">Registrar</button></div></form>
+        <div class="separator"></div>
+        <h3>🎯 Meu objetivo</h3>
+        <form id="profileForm">
+          <div class="field"><label>Nome</label><input name="name" maxlength="70" placeholder="Como quer ser chamado"></div>
+          <div class="two-fields"><div><label>Altura (cm)</label><input name="height" type="number" min="90" max="230" required></div><div><label>Meta (kg)</label><input name="goal" type="number" min="25" max="350" step="0.1" required></div></div>
+          <button class="btn-outline" type="submit">Salvar objetivo</button>
+        </form>
+        <p id="profileMsg" class="feedback"></p>
+      </section>
+
+      <section class="panel ai-card">
+        <div class="section-head"><h2>✨ Assistente alimentar</h2></div>
+        <div id="aiStatus" class="ai-status">Verificando a IA...</div>
+        <p class="helper">Se a IA estiver fora do ar, continue registrando suas refeições manualmente.</p>
+        <form id="chatForm"><textarea name="message" rows="3" placeholder="Ex.: Como posso equilibrar meu almoço?" required></textarea><button class="btn-primary" id="chatBtn">Perguntar à IA</button></form>
+        <div id="chatAnswer" class="chat-answer" aria-live="polite"></div>
+      </section>
+    </aside>
+  </div>
+
+  <div class="content-grid lower">
+    <section class="panel"><h2>📈 Evolução do peso</h2><canvas id="weightChart" width="800" height="210" aria-label="Gráfico de evolução do peso"></canvas><p id="weightHistory" class="helper">Ainda sem registros.</p></section>
+    <section class="panel"><h2>🍽️ Minhas refeições</h2><div id="meals" class="meal-history"><p class="empty">Seu diário começa aqui.</p></div></section>
+  </div>
+
+  <p class="privacy-note">🔒 Seus registros são individuais. Valores nutricionais são estimativas educativas e não substituem orientação profissional.</p>
+</main>
+
+<footer>Todos os direitos reservados • Developed by Alexandre Martins</footer>
+<script src="{{ url_for('static',filename='js/evolucao-new.js') }}" defer></script>
+<script src="{{ url_for('static',filename='js/pwa.js') }}" defer></script>
+</body>
+</html>
