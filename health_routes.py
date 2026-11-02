@@ -92,6 +92,12 @@ def register_health_routes(app):
             return jsonify(entry),201
         except (RuntimeError,ValueError,requests.RequestException) as exc:return jsonify(error=str(exc)[:220]),502
 
+    @app.route('/api/evolucao/conversas',methods=['DELETE'])
+    @login_required
+    def limpar_conversas():
+        _update(lambda state: state.update(chat_history=[]))
+        return jsonify(ok=True)
+
     @app.route('/api/evolucao/chat',methods=['POST'])
     @login_required
     def evolucao_chat():
@@ -102,5 +108,6 @@ def register_health_routes(app):
         try:
             personal=get_config(_user(),reveal=True)
             response=generate(personal,[{'role':'user','content':prompt}]) if personal else analyze(prompt)
+            _update(lambda state: (state.setdefault('chat_history',[]).append({'question':q[:1400],'answer':response['text'][:4500],'at':datetime.now(timezone.utc).isoformat(),'provider':response['provider']}), state.__setitem__('chat_history',state['chat_history'][-60:])))
             return jsonify(answer=response['text'][:4500],provider=response['provider'])
         except (RuntimeError,requests.RequestException) as exc:return jsonify(error=str(exc)[:200]),502

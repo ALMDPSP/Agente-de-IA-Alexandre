@@ -158,7 +158,7 @@ def restrict_legacy_agent_routes():
     if not current_user.is_authenticated or current_user.get_id() == 'admin':
         return None
     path = request.path
-    allowed = ('/evolucao', '/api/evolucao/', '/logout', '/static/')
+    allowed = ('/evolucao', '/api/evolucao/', '/configurar-ia', '/api/minha-ia', '/logout', '/static/')
     if path == '/dashboard' or any(path.startswith(p) for p in allowed):
         return None
     abort(403)
@@ -1459,3 +1459,19 @@ def minha_ia():
     except Exception:
         logger.exception('Erro ao configurar IA pessoal')
         return jsonify(error='Não foi possível salvar a configuração da IA.'),500
+
+
+@app.route('/api/minha-ia/testar', methods=['POST'])
+@login_required
+def testar_minha_ia():
+    try:
+        config = get_config(_owner_id(), reveal=True)
+        if not config:
+            return jsonify(error='Configure sua IA e salve uma chave de API antes de testar.'), 400
+        response = generate(config, [{'role':'user','content':'Responda apenas: conexão OK'}])
+        return jsonify(ok=True, provider=response['provider'], model=response['model'], message='Conexão validada. O modelo respondeu ao teste.')
+    except RuntimeError as exc:
+        return jsonify(error=str(exc)[:180]), 502
+    except Exception:
+        logger.exception('Falha ao testar IA pessoal')
+        return jsonify(error='Não foi possível testar a IA. Tente novamente.'), 502
